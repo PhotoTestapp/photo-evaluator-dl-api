@@ -1020,7 +1020,7 @@ def _store_dl_source_image(raw_bytes: bytes, image_id: str, suffix: str) -> tupl
 
 
 def _attach_full_exif_metadata(payload: dict) -> dict:
-    original_file = payload.get("originalFile") or {}
+    original_file = payload.get("originalFile") or payload.get("originalFileHeader") or {}
     base64_value = str(original_file.get("base64") or "")
     if not base64_value:
         return payload
@@ -1037,7 +1037,7 @@ def _attach_full_exif_metadata(payload: dict) -> dict:
     temp_path = None
     try:
         raw_bytes = base64.b64decode(base64_value)
-        if image_id:
+        if image_id and payload.get("originalFile"):
             stored_path, relative_path = _store_dl_source_image(raw_bytes, image_id, suffix)
             image_metadata["dlImagePath"] = stored_path
             image_metadata["dlImageRelativePath"] = relative_path
@@ -1048,6 +1048,8 @@ def _attach_full_exif_metadata(payload: dict) -> dict:
         exif = _extract_full_exif_metadata(temp_path)
         image_metadata["exif"] = exif
         image_metadata["exifSummary"] = _build_exif_summary(exif)
+        if payload.get("originalFileHeader"):
+            image_metadata["exifFromPartialHeader"] = True
     except Exception as error:  # noqa: BLE001
         image_metadata["exifError"] = str(error)
     finally:
@@ -1057,6 +1059,7 @@ def _attach_full_exif_metadata(payload: dict) -> dict:
     enriched = dict(payload)
     enriched["image_metadata"] = image_metadata
     enriched.pop("originalFile", None)
+    enriched.pop("originalFileHeader", None)
     return enriched
 
 
