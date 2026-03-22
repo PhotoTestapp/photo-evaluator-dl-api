@@ -34,6 +34,7 @@ DEFAULT_ENTRY = "photo-evaluator-training-lab.html"
 DL_LAB_DIR = ROOT_DIR / "dl-lab"
 DL_MODEL_PATH = DL_LAB_DIR / "models" / "dl_residual_model.pt"
 DL_MODEL_META_PATH = DL_LAB_DIR / "models" / "dl_residual_model_meta.json"
+DL_BETA_RESULTS_PATH = DL_LAB_DIR / "exports" / "dl_beta_public_results.jsonl"
 GITHUB_PAGES_DIR = ROOT_DIR.parent / "github-pages-photo-evaluator"
 DL_RUNTIME_CACHE: dict[str, object] = {
     "mtime": None,
@@ -125,6 +126,8 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
             return self._write_json({"success": True, **_get_dl_status()})
         if parsed.path == "/api/dl/stats":
             return self._write_json({"success": True, "stats": _build_dl_statistics()})
+        if parsed.path == "/api/dl/public-stats":
+            return self._write_json({"success": True, "stats": _build_dl_public_statistics()})
         if parsed.path == "/api/admin/status":
             return self._write_json({"success": True, **_build_admin_status()})
         if parsed.path == "/api/ml/export":
@@ -187,6 +190,8 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
             return self._handle_predict()
         if parsed.path == "/api/dl/predict":
             return self._handle_dl_predict()
+        if parsed.path == "/api/dl/evaluation":
+            return self._handle_dl_evaluation()
         if parsed.path == "/api/ml/feedback":
             return self._handle_feedback()
         if parsed.path == "/api/admin/run":
@@ -247,6 +252,26 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
                 "exifStored": bool((saved.get("image_metadata") or {}).get("exif")),
                 "deduplicated": bool(saved.get("deduplicated")),
                 "duplicateOf": saved.get("duplicate_of") or "",
+            }
+        )
+
+    def _handle_dl_evaluation(self) -> None:
+        payload = self._read_json_body()
+        if payload is None:
+            return
+        try:
+            saved_record = _save_dl_public_evaluation(payload)
+        except ValueError as error:
+            return self._write_json(
+                {"success": False, "message": str(error)},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        self._write_json(
+            {
+                "success": True,
+                "saved": True,
+                "record": saved_record,
+                "stats": _build_dl_public_statistics(),
             }
         )
 
@@ -662,6 +687,119 @@ def _build_dl_statistics() -> dict[str, object]:
         },
         "genreCounts": top_genres,
         "evaluationModeCounts": top_modes,
+    }
+
+
+def _read_jsonl_records(path: Path) -> list[dict]:
+    records: list[dict] = []
+    if not path.exists():
+        return records
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append(payload)
+    return records
+
+
+def _save_dl_public_evaluation(payload: dict) -> dict[str, object]:
+    try:
+        total_score = float(payload.get("totalScore"))
+    except (TypeError, ValueError):
+        raise ValueError("totalScore が不正です")
+
+    required_score_keys = [
+        "compositionScore",
+        "lightScore",
+        "colorScore",
+        "technicalScore",
+        "subjectScore",
+        "impressionScore",
+    ]
+    normalized_scores: dict[str, float] = {}
+    for key in required_score_keys:
+        try:
+            normalized_scores[key] = round(float(payload.get(key)), 2)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} が不正です")
+
+    genre = str(payload.get("genre") or "other").strip() or "other"
+    engine = str(payload.get("engine") or "rule").strip() or "rule"
+    model_version = str(payload.get("modelVersion") or payload.get("modelType") or "").strip()
+    record = {
+        "createdAt": str(payload.get("createdAt") or datetime.now(timezone.utc).isoformat()),
+        "engine": engine,
+        "modelVersion": model_version,
+        "genre": genre,
+        "totalScore": round(total_score, 2),
+        **normalized_scores,
+    }
+    DL_BETA_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with DL_BETA_RESULTS_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record
+
+
+def _build_dl_public_statistics() -> dict[str, object]:
+    records = _read_jsonl_records(DL_BETA_RESULTS_PATH)
+    bins = [
+        {"label": "0-49", "min": 0.0, "max": 49.999},
+        {"label": "50-59", "min": 50.0, "max": 59.999},
+        {"label": "60-69", "min": 60.0, "max": 69.999},
+        {"label": "70-79", "min": 70.0, "max": 79.999},
+        {"label": "80-89", "min": 80.0, "max": 89.999},
+        {"label": "90-100", "min": 90.0, "max": 100.001},
+    ]
+    histogram = [{"label": bucket["label"], "count": 0} for bucket in bins]
+    genre_counts: dict[str, int] = {}
+    average_keys = [
+        ("composition", "compositionScore"),
+        ("light", "lightScore"),
+        ("color", "colorScore"),
+        ("technical", "technicalScore"),
+        ("subject", "subjectScore"),
+        ("impact", "impressionScore"),
+        ("total", "totalScore"),
+    ]
+
+    for record in records:
+        total_score = float(record.get("totalScore") or 0.0)
+        for index, bucket in enumerate(bins):
+            if bucket["min"] <= total_score <= bucket["max"]:
+                histogram[index]["count"] += 1
+                break
+        genre = str(record.get("genre") or "other").strip() or "other"
+        genre_counts[genre] = genre_counts.get(genre, 0) + 1
+
+    item_averages = []
+    for label, key in average_keys:
+        values = [float(record.get(key) or 0.0) for record in records if record.get(key) is not None]
+        average = (sum(values) / len(values)) if values else 0.0
+        item_averages.append({"label": label, "value": round(average, 2)})
+
+    return {
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "sampleCount": len(records),
+        "summary": {
+            "totalRecords": len(records),
+            "averageTotalScore": next((item["value"] for item in item_averages if item["label"] == "total"), 0.0),
+        },
+        "scoreHistogram": {
+            "maxCount": max((bucket["count"] for bucket in histogram), default=0),
+            "buckets": histogram,
+        },
+        "genreCounts": [
+            {"label": label, "count": count}
+            for label, count in sorted(genre_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "itemAverages": item_averages,
+        "storagePath": str(DL_BETA_RESULTS_PATH),
     }
 
 
