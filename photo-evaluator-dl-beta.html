@@ -1,0 +1,1420 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photo Evaluator DL Beta</title>
+  <style>
+    :root {
+      --bg: #eef5ff;
+      --panel: rgba(255, 255, 255, 0.94);
+      --line: #cddcff;
+      --text: #243b6b;
+      --muted: #5b73a6;
+      --blue: #5d8df7;
+      --green: #26b68b;
+      --amber: #f0a51a;
+      --red: #ef6b82;
+      --navy: #1d2d5a;
+      --shadow: 0 20px 50px rgba(68, 101, 173, 0.12);
+      --radius: 28px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(93, 141, 247, 0.12), transparent 28%),
+        linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+      color: var(--text);
+    }
+
+    .page {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 28px 18px 42px;
+    }
+
+    .hero,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 30px 34px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 18px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2.3rem, 5vw, 4rem);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+      color: var(--navy);
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.8;
+      max-width: 920px;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.85);
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .chip.green { color: var(--green); }
+    .chip.amber { color: #bf7b00; }
+    .chip.red { color: var(--red); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 24px;
+    }
+
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 1.95rem;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      color: var(--navy);
+    }
+
+    .section-sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 0.98rem;
+    }
+
+    .field-wrap {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .field-label {
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 800;
+    }
+
+    .field-input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 14px 16px;
+      color: var(--navy);
+      font-size: 0.98rem;
+      font-weight: 700;
+    }
+
+    .field-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.7;
+    }
+
+    .dropzone {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 24px;
+      padding: 28px 20px;
+      background: rgba(247, 251, 255, 0.95);
+    }
+
+    .dropzone strong {
+      font-size: 1.15rem;
+      color: var(--navy);
+    }
+
+    .dropzone p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .btn,
+    .file-label {
+      appearance: none;
+      border: 0;
+      border-radius: 20px;
+      cursor: pointer;
+      padding: 16px 22px;
+      font-size: 1rem;
+      font-weight: 800;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 140ms ease, opacity 140ms ease;
+    }
+
+    .btn:hover,
+    .file-label:hover { transform: translateY(-1px); }
+
+    .file-label {
+      background: linear-gradient(135deg, #6c9fff, #5c86ff);
+      color: #fff;
+      min-width: 240px;
+    }
+
+    .btn-primary {
+      width: 100%;
+      background: linear-gradient(135deg, #5d8df7, #4c73ff);
+      color: #fff;
+      margin-top: 16px;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .file-input { display: none; }
+
+    .preview-wrap {
+      margin-top: 18px;
+      display: none;
+      gap: 14px;
+    }
+
+    .preview-card {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: rgba(249, 252, 255, 0.9);
+    }
+
+    .preview-card img {
+      display: block;
+      width: 100%;
+      max-height: 500px;
+      object-fit: contain;
+      background: #f5f8ff;
+    }
+
+    .preview-meta {
+      padding: 14px 16px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .result-card {
+      background: linear-gradient(180deg, rgba(252, 253, 255, 0.96), rgba(246, 250, 255, 0.96));
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 24px;
+    }
+
+    .result-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .result-head h2 {
+      margin: 0;
+      font-size: 1.45rem;
+      color: var(--navy);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 14px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      font-weight: 800;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+    }
+
+    .badge.green { color: var(--green); }
+    .badge.amber { color: #bf7b00; }
+    .badge.red { color: var(--red); }
+
+    .score-panels {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .score-box {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .score-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .score-value {
+      font-size: clamp(2.2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.05em;
+      color: var(--navy);
+    }
+
+    .score-value.blue { color: var(--blue); }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .compare-item {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .compare-item strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.84rem;
+      margin-bottom: 6px;
+    }
+
+    .compare-item span {
+      font-size: 1.45rem;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      color: var(--navy);
+    }
+
+    .matrix-note,
+    .note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+
+    .compare-matrix {
+      margin-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .compare-matrix-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 1.15fr) repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .compare-matrix-cell {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.88);
+      min-height: 64px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .compare-matrix-head .compare-matrix-cell {
+      background: rgba(238, 245, 255, 0.95);
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .compare-matrix-label {
+      font-size: 0.84rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .compare-matrix-value {
+      font-size: 1.35rem;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      color: var(--navy);
+    }
+
+    .comment-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .comment-card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .comment-card h3 {
+      margin: 0 0 12px;
+      font-size: 1.06rem;
+      color: var(--navy);
+    }
+
+    .comment-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.8;
+    }
+
+    .comment-card p:last-child { margin-bottom: 0; }
+
+    .comment-card strong {
+      display: block;
+      color: var(--navy);
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+
+    .status-line {
+      min-height: 1.5em;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .status-line.error { color: var(--red); }
+    .status-line.success { color: var(--green); }
+
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: 22px;
+      padding: 28px 18px;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(247, 250, 255, 0.75);
+    }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 18px 14px 32px; }
+      .hero, .panel { padding: 20px; border-radius: 24px; }
+      .score-panels, .compare-grid, .comment-grid { grid-template-columns: 1fr; }
+      .compare-matrix-row { grid-template-columns: 1fr; }
+      .preview-card img { max-height: 320px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">GitHub Pages 用 DL ベータ</div>
+      <h1>Photo Evaluator DL Beta</h1>
+      <p>現在の公開版とは完全に別で使う、DL 評価専用ページです。保存・Webhook・履歴・学習保存には混ぜず、DL 推論 API を使って総合点と項目別スコア、コメントを確認します。</p>
+      <div class="chip-row">
+        <span class="chip" id="chip-api-status">DL API接続先を確認してください</span>
+        <span class="chip amber">通常の公開版とは完全に分離</span>
+        <a class="chip" href="./index.html">現在の公開版へ戻る</a>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2 class="section-title">DL設定と画像選択</h2>
+        <p class="section-sub">GitHub Pages は静的配信なので、DL 推論は外部 API が必要です。公開用とは別のテストページとして、ここでは DL 採点結果だけを確認します。</p>
+
+        <div class="field-wrap">
+          <label class="field-label" for="dl-api-base">DL API ベースURL</label>
+          <input id="dl-api-base" class="field-input" type="url" placeholder="例: https://your-dl-api.example.com または http://127.0.0.1:8788">
+          <p class="field-note">ローカル検証なら `http://127.0.0.1:8788`、公開運用なら公開可能な DL 推論 API を設定してください。保存すると次回も使います。</p>
+        </div>
+
+        <div class="dropzone">
+          <strong>DL版で評価する画像を選ぶ</strong>
+          <p>JPG / JPEG / PNG / WebP / HEIF を読み込みます。ここでの結果は通常公開版や学習データへ混ざりません。</p>
+          <label class="file-label" for="file-input">画像を選択する</label>
+          <input id="file-input" class="file-input" type="file" accept="image/*,.heic,.heif">
+        </div>
+
+        <div class="preview-wrap" id="preview-wrap">
+          <div class="preview-card">
+            <img id="preview-image" alt="DL評価用プレビュー">
+            <div class="preview-meta">
+              <span id="preview-name">未選択</span>
+              <span id="preview-size">-</span>
+            </div>
+          </div>
+          <button id="eval-btn" class="btn btn-primary" type="button" disabled>DL版で評価する</button>
+          <div class="status-line" id="status-line"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2 class="section-title">DL採点結果</h2>
+        <p class="section-sub">DL 推論 API が返す項目別スコアと総合点を表示します。参考として通常ルールベースの点も並べますが、公開版の保存やフィードバック処理には使いません。</p>
+
+        <div id="result-empty" class="empty">画像を選んで `DL版で評価する` を押すと、ここに通常評価と DL 評価の比較が表示されます。</div>
+
+        <div id="result-card" class="result-card" style="display:none">
+          <div class="result-head">
+            <h2>DL採点比較</h2>
+            <span class="badge" id="result-badge">DL未実行</span>
+          </div>
+
+          <div class="score-panels">
+            <div class="score-box">
+              <span class="score-label">通常の総合点</span>
+              <div class="score-value" id="rule-total-score">-</div>
+            </div>
+            <div class="score-box">
+              <span class="score-label">DL版の総合点</span>
+              <div class="score-value blue" id="dl-total-score">-</div>
+            </div>
+          </div>
+
+          <div class="compare-grid">
+            <div class="compare-item">
+              <strong>DL補正差分</strong>
+              <span id="dl-delta-score">-</span>
+            </div>
+            <div class="compare-item">
+              <strong>DL学習件数</strong>
+              <span id="dl-sample-count">-</span>
+            </div>
+            <div class="compare-item">
+              <strong>DL検証MAE</strong>
+              <span id="dl-validation-mae">-</span>
+            </div>
+            <div class="compare-item">
+              <strong>モデル種別</strong>
+              <span id="dl-model-type">-</span>
+            </div>
+          </div>
+
+          <div class="compare-matrix" id="compare-matrix"></div>
+          <p class="matrix-note">左が現在のルールベース、右が DL モデルの項目別予測です。DL 側が返せない項目は通常値を引き継ぎません。表示差分をそのまま比較できます。</p>
+
+          <div class="comment-grid" id="comment-grid"></div>
+          <p class="note" id="result-note">このページは DL 評価確認専用です。Google Drive 送信・Webhook・履歴・学習保存は行いません。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const DL_API_STORAGE_KEY = 'photo_eval_dl_beta_api_base';
+    const BROWSER_ML_MODEL_PATH = './photo_eval_model.json';
+    const DEFAULT_DL_API_BASE = (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+      ? `${location.protocol}//${location.host}`
+      : '';
+
+    const fileInput = document.getElementById('file-input');
+    const evalButton = document.getElementById('eval-btn');
+    const previewWrap = document.getElementById('preview-wrap');
+    const previewImage = document.getElementById('preview-image');
+    const previewName = document.getElementById('preview-name');
+    const previewSize = document.getElementById('preview-size');
+    const statusLine = document.getElementById('status-line');
+    const chipApiStatus = document.getElementById('chip-api-status');
+    const resultEmpty = document.getElementById('result-empty');
+    const resultCard = document.getElementById('result-card');
+    const resultBadge = document.getElementById('result-badge');
+    const compareMatrix = document.getElementById('compare-matrix');
+    const commentGrid = document.getElementById('comment-grid');
+    const dlApiBaseInput = document.getElementById('dl-api-base');
+    let browserMlModelPromise = null;
+
+    const SCORE_ITEMS = [
+      { label: '構図', key: 'compositionScore' },
+      { label: '光', key: 'lightScore' },
+      { label: '色', key: 'colorScore' },
+      { label: '技術', key: 'technicalScore' },
+      { label: '主題性', key: 'subjectScore' },
+      { label: '印象', key: 'impressionScore' },
+    ];
+
+    const DL_SCORE_KEY_MAP = {
+      composition: 'compositionScore',
+      light: 'lightScore',
+      color: 'colorScore',
+      technical: 'technicalScore',
+      subject: 'subjectScore',
+      impact: 'impressionScore',
+      total: 'totalScore',
+    };
+
+    const ITEM_COMMENT_MAP = {
+      compositionScore: {
+        high: ['左右・上下のバランスが安定し、主題配置もまとまっています。', '三分割構図との整合が高く、視線誘導が自然です。'],
+        mid: ['構図は成立していますが、主題位置を少し動かすと伸びます。', '全体のバランスは悪くありませんが、余白の整理で印象が上がります。'],
+        low: ['主題の位置が曖昧です。三分割線付近へ寄せると改善しやすいです。', '左右または上下の重心が偏っています。撮影位置やトリミングを見直してください。'],
+      },
+      lightScore: {
+        high: ['露出が安定しており、白飛び・黒つぶれがよく抑えられています。', '平均輝度とコントラストのバランスが良く、見やすい明るさです。'],
+        mid: ['明るさは許容範囲ですが、露出補正でさらに見栄えが上がります。', '大きな破綻はありませんが、ハイライトと暗部の扱いに改善余地があります。'],
+        low: ['露出が極端です。白飛びや黒つぶれを抑える再撮影が必要です。', '平均輝度のズレが大きく、明るさ評価を下げています。'],
+      },
+      technicalScore: {
+        high: ['エッジ量とシャープネスが十分で、主題の輪郭が明瞭です。', 'ピントの芯があり、情報がきれいに残っています。'],
+        mid: ['大きなピンボケではありませんが、やや甘さがあります。', '輪郭情報は取れていますが、もう少しシャープさが欲しい状態です。'],
+        low: ['エッジ量が不足しており、ピントが甘く見えます。', 'シャープネスが低く、手ブレかピントずれの可能性があります。'],
+      },
+      colorScore: {
+        high: ['色の乗り方が自然で、白飛びや黒つぶれの影響も少ないです。', '色再現とコントラストの両立ができており、見栄えが安定しています。'],
+        mid: ['色は出ていますが、ハイライトや彩度の調整でさらに整います。', '色再現は平均的で、露出の詰めで印象が上がりやすい状態です。'],
+        low: ['色再現が不安定で、白飛びや黒つぶれが見栄えを下げています。', '彩度やコントラストのバランスが崩れ、色の説得力が弱くなっています。'],
+      },
+      subjectScore: {
+        high: ['主題がはっきりしていて、何を見せたい写真かが一目で伝わります。', '主題と背景の関係が整理されており、視線が自然に集まります。'],
+        mid: ['主題は見えていますが、もう少し整理すると印象が強まります。', '見せたいものは伝わりますが、周辺情報を少し抑えるとさらに良くなります。'],
+        low: ['主題の見せ方が弱く、視線が分散しやすい状態です。', '何を中心に見せたい写真かが伝わりにくく、整理の余地があります。'],
+      },
+      impressionScore: {
+        high: ['第一印象が強く、総合的な完成度が高い一枚です。', '構図・明るさ・主題性のバランスが良く、印象に残りやすい写真です。'],
+        mid: ['印象は平均以上ですが、決定力はまだ伸ばせます。', '破綻は少ないものの、強い記憶点はあと一歩です。'],
+        low: ['主題の押し出しが弱く、印象形成が不足しています。', '構図や背景の再設計で、印象スコアを大きく改善できます。'],
+      },
+    };
+
+    let currentFile = null;
+    let currentFileDataUrl = '';
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const round = (value, digits = 0) => {
+      const factor = 10 ** digits;
+      return Math.round(value * factor) / factor;
+    };
+    const normalize = (value, min, max) => clamp((value - min) / Math.max(1e-9, max - min), 0, 1);
+    const scoreFromDeviation = (value, ideal, tolerance, hardLimit = tolerance * 1.8) => {
+      const delta = Math.abs(value - ideal);
+      if (delta <= tolerance) return 100 - (delta / Math.max(1e-9, tolerance)) * 20;
+      if (delta >= hardLimit) return 20;
+      const range = hardLimit - tolerance;
+      return 80 - ((delta - tolerance) / Math.max(1e-9, range)) * 60;
+    };
+
+    async function loadBrowserMlModel() {
+      if (!browserMlModelPromise) {
+        browserMlModelPromise = fetch(BROWSER_ML_MODEL_PATH, { cache: 'no-store' })
+          .then(async response => {
+            if (!response.ok) throw new Error(`MLモデル取得エラー: HTTP ${response.status}`);
+            const model = await response.json();
+            if (!Array.isArray(model?.feature_names) || !Array.isArray(model?.weights)) {
+              throw new Error('MLモデル形式が不正です');
+            }
+            return model;
+          })
+          .catch(error => {
+            browserMlModelPromise = null;
+            throw error;
+          });
+      }
+      return browserMlModelPromise;
+    }
+
+    function buildMlStatusFromModel(model) {
+      const sampleCount = Number(model?.sample_count || 0);
+      const minimumMlSamples = Number(model?.minimum_ml_samples || 30);
+      const available = sampleCount >= minimumMlSamples;
+      return {
+        available,
+        sampleCount,
+        minimumMlSamples,
+        modelVersion: model?.model_version || '',
+        reason: available ? '' : `学習データ数が${minimumMlSamples}件に達していないためML補正は未使用です`,
+      };
+    }
+
+    function normalizeFeatureVectorForModel(featureVector, predictedScores, featureNames) {
+      const merged = {
+        ...featureVector,
+        ...predictedScores,
+        ruleTotalScore: predictedScores?.totalScore ?? 0,
+        impactScore: predictedScores?.impactScore ?? predictedScores?.impressionScore ?? featureVector?.impactScore ?? 0,
+      };
+      const normalized = {};
+      for (const name of featureNames) {
+        normalized[name] = Number(merged[name] ?? 0) || 0;
+      }
+      return normalized;
+    }
+
+    async function predictWithBrowserModel(featureVector, ruleBasedScores) {
+      const model = await loadBrowserMlModel();
+      const status = buildMlStatusFromModel(model);
+      const ruleScore = Number(ruleBasedScores?.totalScore || 0);
+
+      if (!status.available) {
+        return {
+          mode: 'ML-fallback',
+          engine: 'ml',
+          usedModel: false,
+          predictedTotalScore: ruleScore,
+          predictedDelta: 0,
+          residualApplied: 0,
+          sampleCount: status.sampleCount,
+          minimumMlSamples: status.minimumMlSamples,
+          modelType: model?.model_type || 'linear_residual_regression_v2',
+          modelVersion: status.modelVersion,
+          fallbackReason: status.reason,
+        };
+      }
+
+      const featureNames = Array.isArray(model.feature_names) ? model.feature_names : [];
+      const means = Array.isArray(model.means) ? model.means : [];
+      const scales = Array.isArray(model.scales) ? model.scales : [];
+      const weights = Array.isArray(model.weights) ? model.weights : [];
+      const bias = Number(model.bias || 0);
+      const normalizedFeatures = normalizeFeatureVectorForModel(featureVector, ruleBasedScores, featureNames);
+
+      let residual = bias;
+      for (let index = 0; index < featureNames.length; index += 1) {
+        const name = featureNames[index];
+        const scale = Number(scales[index] || 1) || 1;
+        const mean = Number(means[index] || 0);
+        const value = Number(normalizedFeatures[name] || 0);
+        residual += Number(weights[index] || 0) * ((value - mean) / scale);
+      }
+
+      residual = clamp(residual, -25, 25);
+      const predictedTotalScore = clamp(ruleScore + residual, 0, 100);
+      return {
+        mode: 'ML-fallback',
+        engine: 'ml',
+        usedModel: true,
+        predictedTotalScore: round(predictedTotalScore, 2),
+        predictedDelta: round(residual, 2),
+        residualApplied: round(residual, 2),
+        sampleCount: Number(model.sample_count || 0),
+        minimumMlSamples: Number(model.minimum_ml_samples || 30),
+        modelType: model.model_type || 'linear_residual_regression_v2',
+        modelVersion: model.model_version || '',
+        fallbackReason: '',
+      };
+    }
+
+    function getStoredDlApiBase() {
+      return localStorage.getItem(DL_API_STORAGE_KEY) || DEFAULT_DL_API_BASE;
+    }
+
+    function normalizeDlApiBase(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try {
+        return new URL(raw).toString().replace(/\/$/, '');
+      } catch {
+        return '';
+      }
+    }
+
+    function getDlApiBase() {
+      return normalizeDlApiBase(dlApiBaseInput.value) || normalizeDlApiBase(getStoredDlApiBase());
+    }
+
+    function saveDlApiBase() {
+      const normalized = normalizeDlApiBase(dlApiBaseInput.value);
+      if (!normalized) {
+        localStorage.removeItem(DL_API_STORAGE_KEY);
+        refreshApiChip();
+        return;
+      }
+      localStorage.setItem(DL_API_STORAGE_KEY, normalized);
+      dlApiBaseInput.value = normalized;
+      refreshApiChip();
+    }
+
+    function refreshApiChip(kind = '') {
+      const base = getDlApiBase();
+      chipApiStatus.textContent = base ? `DL API: ${base}` : 'DL API が未設定です';
+      chipApiStatus.className = `chip ${kind || (base ? 'green' : 'red')}`;
+    }
+
+    function getTier(score) {
+      if (score >= 85) return 'high';
+      if (score >= 60) return 'mid';
+      return 'low';
+    }
+
+    function pick(list, seed) {
+      return list[Math.abs(seed) % list.length];
+    }
+
+    function setStatus(message, kind = '') {
+      statusLine.textContent = message;
+      statusLine.className = kind ? `status-line ${kind}` : 'status-line';
+    }
+
+    async function apiRequest(path, options = {}) {
+      const base = getDlApiBase();
+      if (!base) {
+        throw new Error('DL API ベースURLを先に設定してください');
+      }
+
+      const response = await fetch(`${base}${path}`, {
+        method: options.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const data = await response.json();
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let value = bytes;
+      let index = 0;
+      while (value >= 1024 && index < units.length - 1) {
+        value /= 1024;
+        index++;
+      }
+      return `${round(value, value >= 10 ? 0 : 1)}${units[index]}`;
+    }
+
+    async function convertToDlSafeDataUrl(source) {
+      const image = await loadImageElement(source);
+      const longestSide = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height);
+      const scale = Math.min(1, 1280 / Math.max(1, longestSide));
+      const width = Math.max(48, Math.round((image.naturalWidth || image.width) * scale));
+      const height = Math.max(48, Math.round((image.naturalHeight || image.height) * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', 0.92);
+    }
+
+    function withTimeout(promise, ms, message) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(message)), ms);
+        promise.then(
+          value => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          error => {
+            clearTimeout(timer);
+            reject(error);
+          }
+        );
+      });
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = event => resolve(event.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function loadImageElement(source) {
+      const src = typeof source === 'string' ? source : URL.createObjectURL(source);
+      const shouldRevoke = typeof source !== 'string';
+      try {
+        const image = await new Promise((resolve, reject) => {
+          const element = new Image();
+          element.onload = () => resolve(element);
+          element.onerror = () => reject(new Error('Image loading failed'));
+          element.src = src;
+        });
+        return image;
+      } finally {
+        if (shouldRevoke) URL.revokeObjectURL(src);
+      }
+    }
+
+    function createCanvasFromImage(image, maxSide = 768) {
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+      const width = Math.max(48, Math.round((image.naturalWidth || image.width) * scale));
+      const height = Math.max(48, Math.round((image.naturalHeight || image.height) * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, width, height);
+      return { ctx, width, height };
+    }
+
+    function extractImageStats(ctx, width, height) {
+      const { data } = ctx.getImageData(0, 0, width, height);
+      const totalPixels = width * height;
+      const gray = new Float32Array(totalPixels);
+      const histogram = new Uint32Array(256);
+      let sum = 0;
+      let sumSq = 0;
+      let overexposed = 0;
+      let underexposed = 0;
+      let saturated = 0;
+
+      for (let index = 0, pixel = 0; index < data.length; index += 4, pixel++) {
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        gray[pixel] = luminance;
+        histogram[Math.max(0, Math.min(255, luminance | 0))]++;
+        sum += luminance;
+        sumSq += luminance * luminance;
+        if (luminance >= 245) overexposed++;
+        if (luminance <= 18) underexposed++;
+        const maxChannel = Math.max(r, g, b);
+        const minChannel = Math.min(r, g, b);
+        if (maxChannel > 0 && (maxChannel - minChannel) / maxChannel > 0.45) saturated++;
+      }
+
+      const mean = sum / totalPixels;
+      const variance = Math.max(0, sumSq / totalPixels - mean * mean);
+      const std = Math.sqrt(variance);
+      let entropy = 0;
+      for (let i = 0; i < histogram.length; i++) {
+        if (!histogram[i]) continue;
+        const probability = histogram[i] / totalPixels;
+        entropy -= probability * Math.log2(probability);
+      }
+
+      return {
+        gray,
+        mean,
+        std,
+        contrast: std / 128,
+        entropy,
+        overexposedRatio: overexposed / totalPixels,
+        underexposedRatio: underexposed / totalPixels,
+        saturationRatio: saturated / totalPixels,
+      };
+    }
+
+    function analyzeSpatialFeatures(gray, width, height, stats) {
+      const edgeValues = [];
+      let edgeSum = 0;
+      let laplacianSum = 0;
+      let lowEdgeNoiseSum = 0;
+      let lowEdgeCount = 0;
+      let subjectWeightedX = 0;
+      let subjectWeightedY = 0;
+      let totalSaliency = 0;
+
+      const leftBoundary = Math.floor(width / 3);
+      const rightBoundary = Math.floor((width * 2) / 3);
+      const topBoundary = Math.floor(height / 3);
+      const bottomBoundary = Math.floor((height * 2) / 3);
+
+      const bands = {
+        left: 0, center: 0, right: 0, top: 0, middle: 0, bottom: 0, total: 0, peripheral: 0,
+      };
+
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const idx = y * width + x;
+          const gx = -gray[idx - width - 1] - 2 * gray[idx - 1] - gray[idx + width - 1]
+            + gray[idx - width + 1] + 2 * gray[idx + 1] + gray[idx + width + 1];
+          const gy = -gray[idx - width - 1] - 2 * gray[idx - width] - gray[idx - width + 1]
+            + gray[idx + width - 1] + 2 * gray[idx + width] + gray[idx + width + 1];
+          const edge = Math.sqrt(gx * gx + gy * gy);
+          const laplacian = Math.abs(gray[idx - width] + gray[idx + width] + gray[idx - 1] + gray[idx + 1] - 4 * gray[idx]);
+          const localMean = (gray[idx] + gray[idx - 1] + gray[idx + 1] + gray[idx - width] + gray[idx + width]) / 5;
+          const localNoise = Math.abs(gray[idx] - localMean);
+
+          edgeValues.push(edge);
+          edgeSum += edge;
+          laplacianSum += laplacian;
+          if (edge < 28) {
+            lowEdgeNoiseSum += localNoise;
+            lowEdgeCount++;
+          }
+
+          if (x < leftBoundary) bands.left += edge;
+          else if (x < rightBoundary) bands.center += edge;
+          else bands.right += edge;
+
+          if (y < topBoundary) bands.top += edge;
+          else if (y < bottomBoundary) bands.middle += edge;
+          else bands.bottom += edge;
+
+          bands.total += edge;
+          if (x < width * 0.16 || x > width * 0.84 || y < height * 0.16 || y > height * 0.84) {
+            bands.peripheral += edge;
+          }
+
+          const saliency = edge * 0.65 + laplacian * 0.25 + Math.abs(gray[idx] - stats.mean) * 0.1;
+          subjectWeightedX += x * saliency;
+          subjectWeightedY += y * saliency;
+          totalSaliency += saliency;
+        }
+      }
+
+      edgeValues.sort((a, b) => a - b);
+      const dominantEdge = edgeValues[Math.floor(edgeValues.length * 0.85)] || 0;
+      const meanEdge = edgeSum / Math.max(1, edgeValues.length);
+      const sharpnessRaw = laplacianSum / Math.max(1, edgeValues.length);
+      const noiseEstimate = lowEdgeNoiseSum / Math.max(1, lowEdgeCount);
+
+      const subjectX = totalSaliency ? subjectWeightedX / totalSaliency : width / 2;
+      const subjectY = totalSaliency ? subjectWeightedY / totalSaliency : height / 2;
+      const thirdsPoints = [
+        [width / 3, height / 3],
+        [(width * 2) / 3, height / 3],
+        [width / 3, (height * 2) / 3],
+        [(width * 2) / 3, (height * 2) / 3],
+      ];
+      const nearestThird = Math.min(...thirdsPoints.map(([tx, ty]) => Math.hypot(subjectX - tx, subjectY - ty)));
+      const thirdsAlignment = 1 - clamp(nearestThird / (Math.min(width, height) * 0.45), 0, 1);
+      const subjectConcentration = clamp(totalSaliency / Math.max(1, width * height * 140), 0, 1);
+      const backgroundInformation = normalize(stats.entropy, 4.8, 7.6) * 0.45 + normalize(bands.peripheral / Math.max(1, width * height), 8, 60) * 0.55;
+      const clutterScore = clamp(normalize(bands.peripheral / Math.max(1, bands.total), 0.22, 0.88) * 0.6 + backgroundInformation * 0.4, 0, 1);
+
+      return {
+        meanEdge,
+        dominantEdge,
+        sharpnessRaw,
+        noiseEstimate,
+        leftRightBalance: 1 - Math.abs(bands.left - bands.right) / Math.max(1, bands.left + bands.right),
+        topBottomBalance: 1 - Math.abs(bands.top - bands.bottom) / Math.max(1, bands.top + bands.bottom),
+        thirdsAlignment,
+        subjectConcentration,
+        backgroundInformation,
+        backgroundClutter: clutterScore,
+        subjectCenterSupport: 1 - clamp(Math.hypot(subjectX / width - 0.5, subjectY / height - 0.5) / 0.72, 0, 1),
+      };
+    }
+
+    function deriveScoresFromMetrics(metrics) {
+      const lightScore = clamp(round(
+        scoreFromDeviation(metrics.brightnessMean, 138, 22, 62) * 0.34 +
+        scoreFromDeviation(metrics.brightnessStd, 58, 18, 48) * 0.18 +
+        scoreFromDeviation(metrics.contrast, 0.42, 0.16, 0.44) * 0.18 +
+        (1 - clamp(metrics.overexposedRatio / 0.11, 0, 1)) * 15 +
+        (1 - clamp(metrics.underexposedRatio / 0.14, 0, 1)) * 15
+      ), 16, 98);
+
+      const technicalScore = clamp(round(
+        normalize(metrics.meanEdge, 8, 46) * 34 +
+        normalize(metrics.dominantEdge, 18, 96) * 22 +
+        normalize(metrics.sharpnessRaw, 6, 30) * 32 +
+        (1 - normalize(metrics.noiseEstimate, 3, 18)) * 12
+      ), 14, 98);
+
+      const compositionScore = clamp(round(
+        metrics.leftRightBalance * 23 +
+        metrics.topBottomBalance * 18 +
+        metrics.thirdsAlignment * 28 +
+        normalize(metrics.subjectConcentration, 0.035, 0.14) * 17 +
+        metrics.subjectCenterSupport * 14
+      ), 18, 97);
+
+      const colorScore = clamp(round(
+        scoreFromDeviation(metrics.saturationRatio, 0.18, 0.08, 0.2) * 0.34 +
+        scoreFromDeviation(metrics.contrast, 0.42, 0.14, 0.38) * 0.28 +
+        (1 - clamp(metrics.overexposedRatio / 0.11, 0, 1)) * 18 +
+        (1 - clamp(metrics.underexposedRatio / 0.14, 0, 1)) * 20
+      ), 18, 97);
+
+      const organizationScore = clamp(round(
+        (1 - metrics.backgroundClutter) * 40 +
+        (1 - normalize(metrics.backgroundInformation, 0.45, 0.9)) * 20 +
+        metrics.leftRightBalance * 16 +
+        metrics.topBottomBalance * 10 +
+        normalize(metrics.subjectConcentration, 0.03, 0.13) * 14
+      ), 18, 97);
+
+      const informationScore = clamp(round(
+        scoreFromDeviation(metrics.backgroundInformation, 0.46, 0.17, 0.42) * 0.48 +
+        scoreFromDeviation(metrics.entropy, 6.1, 0.9, 2.2) * 0.32 +
+        normalize(metrics.subjectConcentration, 0.03, 0.12) * 20
+      ), 18, 97);
+
+      const backgroundScore = clamp(round(
+        (1 - metrics.backgroundInformation) * 34 +
+        (1 - metrics.backgroundClutter) * 38 +
+        normalize(metrics.subjectConcentration, 0.03, 0.14) * 18 +
+        (1 - normalize(metrics.backgroundInformation, 0.45, 0.9)) * 10
+      ), 18, 96);
+
+      const subjectScore = clamp(round(
+        organizationScore * 0.34 +
+        informationScore * 0.22 +
+        backgroundScore * 0.22 +
+        metrics.subjectCenterSupport * 10 +
+        normalize(metrics.subjectConcentration, 0.03, 0.13) * 12
+      ), 18, 97);
+
+      const impressionScore = clamp(round(
+        compositionScore * 0.2 +
+        lightScore * 0.17 +
+        colorScore * 0.15 +
+        technicalScore * 0.17 +
+        subjectScore * 0.17 +
+        organizationScore * 0.14
+      ), 18, 98);
+
+      const totalScore = clamp(round(
+        compositionScore * 0.18 +
+        lightScore * 0.16 +
+        colorScore * 0.15 +
+        technicalScore * 0.18 +
+        subjectScore * 0.18 +
+        impressionScore * 0.13
+      ), 16, 98);
+
+      return { compositionScore, lightScore, colorScore, technicalScore, subjectScore, impressionScore, totalScore };
+    }
+
+    async function analyzeImageFile(file, preferredSource = '') {
+      const image = await loadImageElement(preferredSource || file);
+      const { ctx, width, height } = createCanvasFromImage(image, 768);
+      const stats = extractImageStats(ctx, width, height);
+      const spatial = analyzeSpatialFeatures(stats.gray, width, height, stats);
+
+      const metrics = {
+        width,
+        height,
+        brightnessMean: stats.mean,
+        brightnessStd: stats.std,
+        overexposedRatio: stats.overexposedRatio,
+        underexposedRatio: stats.underexposedRatio,
+        contrast: stats.contrast,
+        entropy: stats.entropy,
+        saturationRatio: stats.saturationRatio,
+        meanEdge: spatial.meanEdge,
+        dominantEdge: spatial.dominantEdge,
+        sharpnessRaw: spatial.sharpnessRaw,
+        noiseEstimate: spatial.noiseEstimate,
+        leftRightBalance: spatial.leftRightBalance,
+        topBottomBalance: spatial.topBottomBalance,
+        thirdsAlignment: spatial.thirdsAlignment,
+        subjectConcentration: spatial.subjectConcentration,
+        backgroundInformation: spatial.backgroundInformation,
+        backgroundClutter: spatial.backgroundClutter,
+        subjectCenterSupport: spatial.subjectCenterSupport,
+      };
+
+      return { metrics, scores: deriveScoresFromMetrics(metrics) };
+    }
+
+    function buildImprovementSignals(metrics, scores) {
+      const signals = [];
+      if (metrics.overexposedRatio > 0.08) signals.push('白飛びが目立ちます');
+      if (metrics.underexposedRatio > 0.12) signals.push('黒つぶれが多めです');
+      if (metrics.noiseEstimate > 10.5) signals.push('高ISO由来のノイズ感があります');
+      if (metrics.backgroundClutter > 0.58) signals.push('背景がやや散らかっています');
+      if (scores.technicalScore < 60) signals.push('技術面の安定感が不足しています');
+      if (metrics.thirdsAlignment < 0.35) signals.push('主題配置が三分割構図から外れています');
+      if (scores.colorScore < 60) signals.push('色のまとまりがやや弱めです');
+      if (scores.subjectScore < 60) signals.push('主題の見せ方に改善余地があります');
+      return signals;
+    }
+
+    function generateCommentsFromAnalysis(scores, metrics, improvementSignals) {
+      const ranked = Object.entries(scores)
+        .filter(([key]) => SCORE_ITEMS.some(item => item.key === key))
+        .sort((a, b) => b[1] - a[1]);
+      const bestKey = ranked[0][0];
+      const worstKey = ranked[ranked.length - 1][0];
+      const seed = Math.round(metrics.brightnessMean + metrics.sharpnessRaw * 9 + metrics.entropy * 7);
+      const strength = pick(ITEM_COMMENT_MAP[bestKey][getTier(scores[bestKey])], seed + 3);
+
+      const concreteIssues = [];
+      if (metrics.overexposedRatio > 0.08) concreteIssues.push(`白飛び率${round(metrics.overexposedRatio * 100)}%が出ています`);
+      if (metrics.underexposedRatio > 0.12) concreteIssues.push(`黒つぶれ率${round(metrics.underexposedRatio * 100)}%が高めです`);
+      if (metrics.backgroundClutter > 0.58) concreteIssues.push('背景の散らかりが主題の見え方を弱めています');
+      if (scores.technicalScore < 60) concreteIssues.push(`シャープネス指標${round(metrics.sharpnessRaw, 1)}で輪郭が弱めです`);
+      if (metrics.noiseEstimate > 10.5) concreteIssues.push(`ノイズ推定値${round(metrics.noiseEstimate, 1)}でざらつきがあります`);
+
+      const weakestBase = pick(ITEM_COMMENT_MAP[worstKey][getTier(scores[worstKey])], seed + 11);
+      const improvement = [
+        weakestBase,
+        concreteIssues.slice(0, 2).join('。'),
+        improvementSignals.slice(0, 2).length ? `主な課題は ${improvementSignals.slice(0, 2).join('・')} です。` : '',
+      ].filter(Boolean).join(' ');
+
+      let overall = `総合${scores.totalScore}点。`;
+      if (scores.totalScore >= 85) overall += '構図・光・色・主題性のバランスが良く、完成度の高い写真です。';
+      else if (scores.totalScore >= 70) overall += '全体水準は良好ですが、弱い項目を整えるとさらに印象が上がります。';
+      else if (scores.totalScore >= 50) overall += '基本は成立していますが、構図や整理感、露出に改善余地があります。';
+      else overall += '写真としての見せ方に不足があるため、主題の整理と技術面の立て直しが有効です。';
+      overall += ` 光${scores.lightScore}点、技術${scores.technicalScore}点、主題性${scores.subjectScore}点です。`;
+
+      return { strength, improvement, overall };
+    }
+
+    async function requestDlPrediction(imageDataUrl, ruleScore) {
+      return withTimeout(
+        apiRequest('/api/dl/predict', {
+          method: 'POST',
+          body: { imageDataUrl, ruleScore },
+        }),
+        5000,
+        'DL推論がタイムアウトしました'
+      );
+    }
+
+    async function refreshApiStatus() {
+      const base = getDlApiBase();
+      if (!base) {
+        refreshApiChip('red');
+        return;
+      }
+      try {
+        const status = await apiRequest('/api/admin/status');
+        const dlStatus = status.dlStatus || {};
+        chipApiStatus.textContent = `DLモデル: ${dlStatus.available ? '利用可' : '未学習'} / ${dlStatus.sampleCount ?? 0}件`;
+        chipApiStatus.className = `chip ${dlStatus.available ? 'green' : 'amber'}`;
+      } catch (error) {
+        chipApiStatus.textContent = `DL API接続失敗: ${error.message || error}`;
+        chipApiStatus.className = 'chip red';
+      }
+    }
+
+    function setPreview(file, dataUrl) {
+      currentFile = file;
+      currentFileDataUrl = dataUrl;
+      previewImage.src = dataUrl;
+      previewName.textContent = file.name;
+      previewSize.textContent = formatBytes(file.size);
+      previewWrap.style.display = 'grid';
+      evalButton.disabled = false;
+      setStatus('画像を読み込みました。DL版で評価できます。', 'success');
+    }
+
+    function renderCompareMatrix(ruleScores, dlScores, comparisonLabel = 'DL') {
+      const rows = [
+        ...SCORE_ITEMS.map(item => ({
+          label: item.label,
+          normal: ruleScores[item.key],
+          dl: dlScores[item.key],
+        })),
+        {
+          label: '総合',
+          normal: ruleScores.totalScore,
+          dl: dlScores.totalScore,
+        },
+      ];
+
+      compareMatrix.innerHTML = `
+          <div class="compare-matrix-row compare-matrix-head">
+          <div class="compare-matrix-cell">項目</div>
+          <div class="compare-matrix-cell">通常</div>
+          <div class="compare-matrix-cell">${comparisonLabel}</div>
+        </div>
+        ${rows.map(row => `
+          <div class="compare-matrix-row">
+            <div class="compare-matrix-cell">
+              <div class="compare-matrix-label">${row.label}</div>
+              <div class="compare-matrix-value">${row.label === '総合' ? 'TOTAL' : row.label}</div>
+            </div>
+            <div class="compare-matrix-cell"><div class="compare-matrix-value">${round(Number(row.normal), 1)}</div></div>
+            <div class="compare-matrix-cell"><div class="compare-matrix-value">${round(Number(row.dl), 1)}</div></div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function renderCommentGrid(normalComments, compareComments, compareLabel = 'DLコメント') {
+      const cards = [
+        { label: '通常コメント', comments: normalComments },
+        { label: compareLabel, comments: compareComments },
+      ];
+
+      commentGrid.innerHTML = cards.map(card => `
+        <section class="comment-card">
+          <h3>${card.label}</h3>
+          <p><strong>良い点</strong>${card.comments.strength}</p>
+          <p><strong>改善点</strong>${card.comments.improvement}</p>
+          <p><strong>総評</strong>${card.comments.overall}</p>
+        </section>
+      `).join('');
+    }
+
+    function renderResult(analysis, dl) {
+      const ruleScore = Number(analysis.scores.totalScore || 0);
+      const compareLabel = dl.engine === 'ml' ? 'ML' : 'DL';
+      const compareCommentLabel = dl.engine === 'ml' ? 'MLコメント' : 'DLコメント';
+      const predictedScores = {};
+      Object.entries(DL_SCORE_KEY_MAP).forEach(([sourceKey, scoreKey]) => {
+        const value = dl?.predictedScores?.[sourceKey];
+        if (value !== undefined && value !== null && value !== '') {
+          predictedScores[scoreKey] = round(Number(value), 1);
+        }
+      });
+      const dlScores = {
+        ...analysis.scores,
+        ...predictedScores,
+        totalScore: predictedScores.totalScore ?? round(Number(dl.predictedTotalScore ?? ruleScore), 1),
+      };
+
+      const normalComments = generateCommentsFromAnalysis(analysis.scores, analysis.metrics, buildImprovementSignals(analysis.metrics, analysis.scores));
+      const dlComments = generateCommentsFromAnalysis(dlScores, analysis.metrics, buildImprovementSignals(analysis.metrics, dlScores));
+
+      resultEmpty.style.display = 'none';
+      resultCard.style.display = 'block';
+      document.getElementById('rule-total-score').textContent = String(ruleScore);
+      document.getElementById('dl-total-score').textContent = String(dlScores.totalScore);
+      document.getElementById('dl-delta-score').textContent = `${Number(dl.predictedDelta || 0) > 0 ? '+' : ''}${round(Number(dl.predictedDelta || (dlScores.totalScore - ruleScore)), 1)}`;
+      document.getElementById('dl-sample-count').textContent = String(dl.sampleCount ?? 0);
+      document.getElementById('dl-validation-mae').textContent = dl.validationMae == null ? '—' : String(round(Number(dl.validationMae), 3));
+      document.getElementById('dl-model-type').textContent = dl.modelType || '未設定';
+
+      if (dl.engine === 'ml') {
+        resultBadge.textContent = dl.usedModel ? 'MLフォールバック' : '標準評価';
+        resultBadge.className = `badge ${dl.usedModel ? 'amber' : 'red'}`;
+      } else {
+        resultBadge.textContent = dl.usedModel ? 'DL推論あり' : 'DL未使用';
+        resultBadge.className = `badge ${dl.usedModel ? 'green' : 'amber'}`;
+      }
+      document.querySelector('.score-box .score-label + .score-value.blue')?.parentElement?.querySelector('.score-label').textContent = `${compareLabel}版の総合点`;
+      renderCompareMatrix(analysis.scores, dlScores, compareLabel);
+      renderCommentGrid(normalComments, dlComments, compareCommentLabel);
+      document.getElementById('result-note').textContent = [
+        'このページは DL 評価専用です。保存・履歴・フィードバック送信には混ざりません。',
+        dl.engine === 'ml'
+          ? `DLが使えなかったため ${dl.usedModel ? 'ML補正' : '標準評価'} を表示しています。${dl.fallbackReason || ''}`.trim()
+          : (dl.usedModel ? '' : `DL: ${dl.reason || '未使用'}`),
+      ].filter(Boolean).join(' ');
+    }
+
+    async function runDlTest() {
+      if (!currentFile) {
+        setStatus('先に画像を選んでください', 'error');
+        return;
+      }
+
+      evalButton.disabled = true;
+      setStatus('DL版で採点しています...');
+
+      try {
+        const imageDataUrl = currentFileDataUrl || await readFileAsDataURL(currentFile);
+        const dlSafeImageDataUrl = await convertToDlSafeDataUrl(imageDataUrl);
+        const analysis = await analyzeImageFile(currentFile, imageDataUrl);
+        const ruleScore = Math.round(Number(analysis.scores.totalScore || 0));
+        let dl;
+        try {
+          dl = await requestDlPrediction(dlSafeImageDataUrl, ruleScore);
+          dl.engine = 'dl';
+        } catch (dlError) {
+          console.warn('DL prediction failed, falling back to ML', dlError);
+          const mlPrediction = await predictWithBrowserModel(analysis.metrics, analysis.scores);
+          dl = {
+            ...mlPrediction,
+            reason: dlError?.message || 'DL推論が利用できません',
+          };
+        }
+        renderResult(analysis, dl);
+        if (dl.engine === 'ml') {
+          setStatus(dl.usedModel ? 'DLが使えなかったため、ML補正で表示しました。' : 'DLとMLが使えなかったため、標準評価で表示しました。', dl.usedModel ? 'success' : '');
+        } else {
+          setStatus(dl.usedModel ? 'DL版の採点が完了しました。' : 'DLモデルを使わず表示しました。', dl.usedModel ? 'success' : '');
+        }
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || 'DL版の採点に失敗しました', 'error');
+      } finally {
+        evalButton.disabled = false;
+      }
+    }
+
+    dlApiBaseInput.value = getStoredDlApiBase();
+    dlApiBaseInput.addEventListener('change', () => {
+      saveDlApiBase();
+      void refreshApiStatus();
+    });
+    dlApiBaseInput.addEventListener('blur', () => {
+      saveDlApiBase();
+      void refreshApiStatus();
+    });
+
+    fileInput.addEventListener('change', async event => {
+      const [file] = Array.from(event.target.files || []);
+      if (!file) return;
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        setPreview(file, dataUrl);
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || '画像の読み込みに失敗しました', 'error');
+      }
+    });
+
+    evalButton.addEventListener('click', () => {
+      void runDlTest();
+    });
+
+    refreshApiChip();
+    void refreshApiStatus();
+  </script>
+</body>
+</html>
