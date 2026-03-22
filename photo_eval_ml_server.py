@@ -460,9 +460,12 @@ def _load_dl_runtime() -> tuple[object | None, object | None, dict, object | Non
     output_names = metadata.get("output_names")
     if not isinstance(output_names, list) or not output_names:
         output_names = ["total"]
+    genre_labels = metadata.get("genre_labels")
+    if not isinstance(genre_labels, list):
+        genre_labels = []
 
     class TinyScoreCNN(nn.Module):
-        def __init__(self, output_dim: int):
+        def __init__(self, output_dim: int, genre_dim: int):
             super().__init__()
             self.features = nn.Sequential(
                 nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1),
@@ -473,15 +476,19 @@ def _load_dl_runtime() -> tuple[object | None, object | None, dict, object | Non
                 nn.ReLU(inplace=True),
                 nn.AdaptiveAvgPool2d((1, 1)),
             )
-            self.head = nn.Sequential(
+            self.shared = nn.Sequential(
                 nn.Flatten(),
                 nn.Linear(64, 96),
                 nn.ReLU(inplace=True),
-                nn.Linear(96, output_dim),
             )
+            self.score_head = nn.Linear(96, output_dim)
+            self.genre_head = nn.Linear(96, genre_dim) if genre_dim > 0 else None
 
         def forward(self, x):
-            return self.head(self.features(x))
+            shared = self.shared(self.features(x))
+            score_output = self.score_head(shared)
+            genre_output = self.genre_head(shared) if self.genre_head is not None else None
+            return score_output, genre_output
 
     image_size = int(metadata.get("image_size") or 224)
     transform = transforms.Compose([
@@ -489,7 +496,10 @@ def _load_dl_runtime() -> tuple[object | None, object | None, dict, object | Non
         transforms.ToTensor(),
     ])
     checkpoint = torch.load(DL_MODEL_PATH, map_location="cpu")
-    model = TinyScoreCNN(len(output_names))
+    checkpoint_genre_labels = checkpoint.get("genre_labels")
+    if isinstance(checkpoint_genre_labels, list) and checkpoint_genre_labels:
+        genre_labels = checkpoint_genre_labels
+    model = TinyScoreCNN(len(output_names), len(genre_labels))
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
 
@@ -511,10 +521,14 @@ def _predict_with_dl_model(image_data_url: str, rule_score: float) -> dict[str, 
             "predictedTotalScore": round(rule_score, 2),
             "predictedDelta": 0.0,
             "predictedScores": {},
+            "predictedGenre": "",
+            "genreProbabilities": {},
+            "genreLabels": metadata.get("genre_labels") or [],
             "modelType": str(metadata.get("model_type") or ""),
             "sampleCount": int(metadata.get("sample_count") or 0),
             "validationMae": metadata.get("validation_mae"),
             "validationMaeByOutput": metadata.get("validation_mae_by_output") or {},
+            "validationGenreAccuracy": metadata.get("validation_genre_accuracy"),
             "outputNames": metadata.get("output_names") or ["total"],
             "reason": error_message or "DLモデルを利用できません",
         }
@@ -524,7 +538,9 @@ def _predict_with_dl_model(image_data_url: str, rule_score: float) -> dict[str, 
         image = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
         tensor = transform(image).unsqueeze(0)
         with torch.no_grad():
-            raw_output = model(tensor).squeeze(0).detach().cpu().tolist()
+            score_output, genre_output = model(tensor)
+            raw_output = score_output.squeeze(0).detach().cpu().tolist()
+            raw_genre_output = genre_output.squeeze(0).detach().cpu().tolist() if genre_output is not None else []
     except Exception as error:
         return {
             "available": True,
@@ -532,10 +548,14 @@ def _predict_with_dl_model(image_data_url: str, rule_score: float) -> dict[str, 
             "predictedTotalScore": round(rule_score, 2),
             "predictedDelta": 0.0,
             "predictedScores": {},
+            "predictedGenre": "",
+            "genreProbabilities": {},
+            "genreLabels": metadata.get("genre_labels") or [],
             "modelType": str(metadata.get("model_type") or ""),
             "sampleCount": int(metadata.get("sample_count") or 0),
             "validationMae": metadata.get("validation_mae"),
             "validationMaeByOutput": metadata.get("validation_mae_by_output") or {},
+            "validationGenreAccuracy": metadata.get("validation_genre_accuracy"),
             "outputNames": metadata.get("output_names") or ["total"],
             "reason": f"DL推論に失敗しました: {error}",
         }
@@ -562,16 +582,34 @@ def _predict_with_dl_model(image_data_url: str, rule_score: float) -> dict[str, 
         predicted_total = max(0.0, min(100.0, rule_score + residual))
         predicted_delta = residual
 
+    predicted_genre = ""
+    genre_probabilities = {}
+    genre_labels = metadata.get("genre_labels")
+    if isinstance(genre_labels, list) and genre_labels and isinstance(raw_genre_output, list) and raw_genre_output:
+        probabilities_tensor = torch.softmax(torch.tensor(raw_genre_output, dtype=torch.float32), dim=0)
+        probabilities = probabilities_tensor.tolist()
+        best_index = int(probabilities_tensor.argmax().item())
+        if 0 <= best_index < len(genre_labels):
+            predicted_genre = str(genre_labels[best_index])
+        genre_probabilities = {
+            str(label): round(float(probability), 4)
+            for label, probability in zip(genre_labels, probabilities)
+        }
+
     return {
         "available": True,
         "usedModel": True,
         "predictedTotalScore": round(predicted_total, 2),
         "predictedDelta": round(predicted_delta, 2),
         "predictedScores": predicted_scores,
+        "predictedGenre": predicted_genre,
+        "genreProbabilities": genre_probabilities,
+        "genreLabels": metadata.get("genre_labels") or [],
         "modelType": str(metadata.get("model_type") or ""),
         "sampleCount": int(metadata.get("sample_count") or 0),
         "validationMae": metadata.get("validation_mae"),
         "validationMaeByOutput": metadata.get("validation_mae_by_output") or {},
+        "validationGenreAccuracy": metadata.get("validation_genre_accuracy"),
         "outputNames": metadata.get("output_names") or ["total"],
         "reason": "",
     }
