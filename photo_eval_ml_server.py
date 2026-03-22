@@ -18,6 +18,9 @@ from urllib.request import Request, urlopen
 from import_public_feedback import DEFAULT_EXPORT_URL, fetch_records
 from photo_eval_ml_core import (
     ROOT_DIR,
+    _build_exif_summary_from_exif,
+    _coerce_float,
+    _parse_capture_datetime,
     build_feedback_statistics,
     ensure_database,
     export_feedback_records,
@@ -260,6 +263,7 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         if payload is None:
             return
         try:
+            payload = _attach_full_exif_metadata(payload)
             saved_record = _save_dl_public_evaluation(payload)
         except ValueError as error:
             return self._write_json(
@@ -732,12 +736,16 @@ def _save_dl_public_evaluation(payload: dict) -> dict[str, object]:
     genre = str(payload.get("genre") or "other").strip() or "other"
     engine = str(payload.get("engine") or "rule").strip() or "rule"
     model_version = str(payload.get("modelVersion") or payload.get("modelType") or "").strip()
+    image_metadata = dict(payload.get("image_metadata") or {})
     record = {
+        "imageId": str(payload.get("imageId") or payload.get("image_id") or ""),
         "createdAt": str(payload.get("createdAt") or datetime.now(timezone.utc).isoformat()),
         "engine": engine,
         "modelVersion": model_version,
         "genre": genre,
         "totalScore": round(total_score, 2),
+        "fileName": str(payload.get("fileName") or image_metadata.get("originalFileName") or ""),
+        "imageMetadata": image_metadata,
         **normalized_scores,
     }
     DL_BETA_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -758,6 +766,18 @@ def _build_dl_public_statistics() -> dict[str, object]:
     ]
     histogram = [{"label": bucket["label"], "count": 0} for bucket in bins]
     genre_counts: dict[str, int] = {}
+    camera_counts: dict[str, int] = {}
+    location_counts: dict[str, int] = {}
+    lens_counts: dict[str, int] = {}
+    hour_buckets = [{"label": f"{hour:02d}", "count": 0} for hour in range(24)]
+    altitude_buckets = [
+        {"label": "海面下", "min": None, "max": 0, "count": 0},
+        {"label": "0-49m", "min": 0, "max": 50, "count": 0},
+        {"label": "50-99m", "min": 50, "max": 100, "count": 0},
+        {"label": "100-199m", "min": 100, "max": 200, "count": 0},
+        {"label": "200-499m", "min": 200, "max": 500, "count": 0},
+        {"label": "500m以上", "min": 500, "max": None, "count": 0},
+    ]
     average_keys = [
         ("composition", "compositionScore"),
         ("light", "lightScore"),
@@ -767,6 +787,9 @@ def _build_dl_public_statistics() -> dict[str, object]:
         ("impact", "impressionScore"),
         ("total", "totalScore"),
     ]
+    exif_count = 0
+    geo_count = 0
+    altitude_count = 0
 
     for record in records:
         total_score = float(record.get("totalScore") or 0.0)
@@ -776,6 +799,53 @@ def _build_dl_public_statistics() -> dict[str, object]:
                 break
         genre = str(record.get("genre") or "other").strip() or "other"
         genre_counts[genre] = genre_counts.get(genre, 0) + 1
+
+        image_metadata = dict(record.get("imageMetadata") or {})
+        exif_summary = dict(image_metadata.get("exifSummary") or {})
+        if not exif_summary and isinstance(image_metadata.get("exif"), dict):
+          exif_summary = _build_exif_summary_from_exif(dict(image_metadata.get("exif") or {}))
+        if any(value not in ("", None) for value in exif_summary.values()):
+            exif_count += 1
+
+        camera_name = str(exif_summary.get("cameraModel") or "").strip()
+        if camera_name:
+            camera_counts[camera_name] = camera_counts.get(camera_name, 0) + 1
+
+        lens_name = str(exif_summary.get("lensModel") or "").strip()
+        if lens_name:
+            lens_counts[lens_name] = lens_counts.get(lens_name, 0) + 1
+
+        location_label = str(exif_summary.get("locationLabel") or exif_summary.get("prefecture") or "").strip()
+        if location_label:
+            location_counts[location_label] = location_counts.get(location_label, 0) + 1
+
+        capture_hour = exif_summary.get("captureHour")
+        if capture_hour in ("", None):
+            parsed_capture = _parse_capture_datetime(exif_summary.get("dateTimeOriginal"))
+            capture_hour = parsed_capture.hour if parsed_capture else None
+        if isinstance(capture_hour, int) and 0 <= capture_hour <= 23:
+            hour_buckets[capture_hour]["count"] += 1
+
+        latitude = _coerce_float(exif_summary.get("gpsLatitude"))
+        longitude = _coerce_float(exif_summary.get("gpsLongitude"))
+        if latitude is not None and longitude is not None:
+            geo_count += 1
+
+        altitude_value = _coerce_float(exif_summary.get("altitudeMeters"))
+        if altitude_value is not None:
+            altitude_count += 1
+            for bucket in altitude_buckets:
+                minimum = bucket["min"]
+                maximum = bucket["max"]
+                if minimum is None and altitude_value < float(maximum):
+                    bucket["count"] += 1
+                    break
+                if maximum is None and altitude_value >= float(minimum):
+                    bucket["count"] += 1
+                    break
+                if minimum is not None and maximum is not None and minimum <= altitude_value < maximum:
+                    bucket["count"] += 1
+                    break
 
     item_averages = []
     for label, key in average_keys:
@@ -789,6 +859,10 @@ def _build_dl_public_statistics() -> dict[str, object]:
         "summary": {
             "totalRecords": len(records),
             "averageTotalScore": next((item["value"] for item in item_averages if item["label"] == "total"), 0.0),
+            "exifRecords": exif_count,
+            "exifCoverageRate": round((exif_count / len(records)) * 100, 1) if records else 0.0,
+            "geoRecords": geo_count,
+            "altitudeRecords": altitude_count,
         },
         "scoreHistogram": {
             "maxCount": max((bucket["count"] for bucket in histogram), default=0),
@@ -799,6 +873,23 @@ def _build_dl_public_statistics() -> dict[str, object]:
             for label, count in sorted(genre_counts.items(), key=lambda item: (-item[1], item[0]))
         ],
         "itemAverages": item_averages,
+        "captureHourHistogram": hour_buckets,
+        "topCameras": [
+            {"label": label, "count": count}
+            for label, count in sorted(camera_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "topLenses": [
+            {"label": label, "count": count}
+            for label, count in sorted(lens_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "locationCounts": [
+            {"label": label, "count": count}
+            for label, count in sorted(location_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "altitudeHistogram": {
+            "maxCount": max((bucket["count"] for bucket in altitude_buckets), default=0),
+            "buckets": altitude_buckets,
+        },
         "storagePath": str(DL_BETA_RESULTS_PATH),
     }
 
