@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: photo-evaluator-dl-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 photo_eval_ml_server.py
+    envVars:
+      - key: PHOTO_EVAL_ML_HOST
+        value: 0.0.0.0
