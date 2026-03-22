@@ -39,6 +39,7 @@ DL_MODEL_PATH = DL_LAB_DIR / "models" / "dl_residual_model.pt"
 DL_MODEL_META_PATH = DL_LAB_DIR / "models" / "dl_residual_model_meta.json"
 DL_BETA_RESULTS_PATH = DL_LAB_DIR / "exports" / "dl_beta_public_results.jsonl"
 GITHUB_PAGES_DIR = ROOT_DIR.parent / "github-pages-photo-evaluator"
+DL_PUBLIC_STATS_URL = os.environ.get("PHOTO_EVAL_DL_PUBLIC_STATS_URL", "https://photo-evaluator-dl-api.onrender.com/api/dl/public-stats")
 DL_RUNTIME_CACHE: dict[str, object] = {
     "mtime": None,
     "model": None,
@@ -130,7 +131,7 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/dl/stats":
             return self._write_json({"success": True, "stats": _build_dl_statistics()})
         if parsed.path == "/api/dl/public-stats":
-            return self._write_json({"success": True, "stats": _build_dl_public_statistics()})
+            return self._write_json({"success": True, "stats": _get_dl_public_statistics()})
         if parsed.path == "/api/admin/status":
             return self._write_json({"success": True, **_build_admin_status()})
         if parsed.path == "/api/ml/export":
@@ -892,6 +893,32 @@ def _build_dl_public_statistics() -> dict[str, object]:
         },
         "storagePath": str(DL_BETA_RESULTS_PATH),
     }
+
+
+def _fetch_remote_dl_public_statistics() -> dict[str, object] | None:
+    if not DL_PUBLIC_STATS_URL:
+        return None
+    try:
+        request = Request(DL_PUBLIC_STATS_URL, headers={"Accept": "application/json"})
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        stats = payload.get("stats") if isinstance(payload, dict) else None
+        if isinstance(stats, dict):
+            stats = dict(stats)
+            stats["source"] = "remote"
+            return stats
+    except Exception:
+        return None
+    return None
+
+
+def _get_dl_public_statistics() -> dict[str, object]:
+    remote_stats = _fetch_remote_dl_public_statistics()
+    if remote_stats:
+        return remote_stats
+    local_stats = _build_dl_public_statistics()
+    local_stats["source"] = "local"
+    return local_stats
 
 
 def _run_admin_action(action: str) -> dict[str, object]:
