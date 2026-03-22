@@ -1,0 +1,34 @@
+{
+  "model_type": "tiny_cnn_multi_score_regression_v2",
+  "trained_at": "2026-03-22T07:11:15.315303+00:00",
+  "dataset_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/exports/dl_dataset.jsonl",
+  "sample_count": 29,
+  "train_count": 24,
+  "validation_count": 5,
+  "target": "multi_score",
+  "output_names": [
+    "composition",
+    "light",
+    "color",
+    "technical",
+    "subject",
+    "impact",
+    "total"
+  ],
+  "image_size": 224,
+  "batch_size": 8,
+  "epochs": 12,
+  "learning_rate": 0.001,
+  "train_loss_final": 818.7878824869791,
+  "validation_mae": 34.1474,
+  "validation_mae_by_output": {
+    "composition": 22.4276,
+    "light": 22.334,
+    "color": 13.3823,
+    "technical": 60.8467,
+    "subject": 13.5807,
+    "impact": 25.3408,
+    "total": 34.1474
+  },
+  "model_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/models/dl_residual_model.pt"
+}
