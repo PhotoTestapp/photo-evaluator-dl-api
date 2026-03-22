@@ -1,10 +1,10 @@
 {
   "model_type": "tiny_cnn_multi_task_score_genre_v3",
-  "trained_at": "2026-03-22T14:03:28.904978+00:00",
+  "trained_at": "2026-03-22T21:34:59.343367+00:00",
   "dataset_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/exports/dl_dataset.jsonl",
-  "sample_count": 29,
-  "train_count": 24,
-  "validation_count": 5,
+  "sample_count": 38,
+  "train_count": 31,
+  "validation_count": 7,
   "target": "multi_score",
   "output_names": [
     "composition",
@@ -28,21 +28,22 @@
   "epochs": 12,
   "learning_rate": 0.001,
   "genre_loss_weight": 0.35,
-  "train_loss_final": 796.0946044921875,
-  "validation_mae": 33.7726,
+  "train_loss_final": 429.50875362273183,
+  "validation_mae": 14.9949,
   "validation_mae_by_output": {
-    "composition": 22.0175,
-    "light": 22.0154,
-    "color": 13.4389,
-    "technical": 60.5536,
-    "subject": 13.2633,
-    "impact": 24.8884,
-    "total": 33.7726
+    "composition": 9.5102,
+    "light": 18.7964,
+    "color": 11.9098,
+    "technical": 40.3292,
+    "subject": 9.313,
+    "impact": 12.3537,
+    "total": 14.9949
   },
-  "validation_genre_accuracy": 0.2,
+  "validation_genre_accuracy": 0.2857,
   "validation_genre_accuracy_by_label": {
-    "portrait": 0.0,
-    "animal": 0.5,
+    "portrait": 1.0,
+    "landscape": 0.0,
+    "food": 0.0,
     "other": 0.0
   },
   "model_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/models/dl_residual_model.pt"
