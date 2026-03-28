@@ -1,10 +1,10 @@
 {
   "model_type": "tiny_cnn_multi_task_score_genre_v4",
-  "trained_at": "2026-03-25T21:30:22.144612+00:00",
-  "dataset_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/exports/dl_dataset.jsonl",
-  "sample_count": 64,
-  "train_count": 52,
-  "validation_count": 12,
+  "trained_at": "2026-03-28T13:55:25.691717+00:00",
+  "dataset_path": "/Users/haradasusumuwataru/Documents/アプリ/photo-evaluator-training-lab-app/dl-lab/exports/dl_dataset.jsonl",
+  "sample_count": 71,
+  "train_count": 57,
+  "validation_count": 14,
   "target": "multi_score",
   "output_names": [
     "composition",
@@ -23,15 +23,15 @@
     "food",
     "other"
   ],
-  "genre_supervised_train_count": 52,
-  "genre_supervised_validation_count": 12,
+  "genre_supervised_train_count": 57,
+  "genre_supervised_validation_count": 14,
   "genre_train_counts": {
-    "portrait": 8,
-    "landscape": 11,
+    "portrait": 7,
+    "landscape": 9,
     "animal": 11,
-    "flora": 7,
-    "food": 4,
-    "other": 11
+    "flora": 9,
+    "food": 9,
+    "other": 12
   },
   "image_size": 224,
   "batch_size": 8,
@@ -40,31 +40,32 @@
   "genre_loss_weight": 1.0,
   "genre_class_weight_power": 0.5,
   "genre_class_weights": {
-    "portrait": 0.9931,
-    "landscape": 0.8469,
-    "animal": 0.8469,
-    "flora": 1.0617,
-    "food": 1.4045,
-    "other": 0.8469
+    "portrait": 1.1522,
+    "landscape": 1.0162,
+    "animal": 0.9192,
+    "flora": 1.0162,
+    "food": 1.0162,
+    "other": 0.88
   },
-  "train_loss_final": 368.5209256685697,
-  "validation_mae": 8.1554,
+  "train_loss_final": 328.0924430981017,
+  "validation_mae": 7.7477,
   "validation_mae_by_output": {
-    "composition": 5.7279,
-    "light": 10.9818,
-    "color": 11.9752,
-    "technical": 24.8207,
-    "subject": 5.4828,
-    "impact": 7.0625,
-    "total": 8.1554
+    "composition": 6.1063,
+    "light": 11.7515,
+    "color": 11.5573,
+    "technical": 28.1385,
+    "subject": 6.9232,
+    "impact": 6.0406,
+    "total": 7.7477
   },
-  "validation_genre_accuracy": 0.3333,
+  "validation_genre_accuracy": 0.1429,
   "validation_genre_accuracy_by_label": {
     "portrait": 0.0,
-    "animal": 1.0,
+    "landscape": 1.0,
+    "animal": 0.0,
     "flora": 0.0,
     "food": 0.0,
     "other": 0.0
   },
-  "model_path": "/Users/haradasusumuwataru/Library/Mobile Documents/com~apple~CloudDocs/名称未設定フォルダ/photo-evaluator-training-lab-app/dl-lab/models/dl_residual_model.pt"
+  "model_path": "/Users/haradasusumuwataru/Documents/アプリ/photo-evaluator-training-lab-app/dl-lab/models/dl_residual_model.pt"
 }
