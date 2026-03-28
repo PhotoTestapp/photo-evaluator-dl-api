@@ -1,27 +1,20 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import mimetypes
 import os
-import subprocess
-import tempfile
+import secrets
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from datetime import datetime, timezone
-from urllib.error import URLError
-from urllib.parse import parse_qs, quote, unquote, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, quote, urlparse
 
 from import_public_feedback import DEFAULT_EXPORT_URL, fetch_records
 from photo_eval_ml_core import (
     ROOT_DIR,
-    _build_exif_summary_from_exif,
-    _coerce_float,
-    _parse_capture_datetime,
-    build_feedback_statistics,
     ensure_database,
     export_feedback_records,
     get_model_status,
@@ -31,15 +24,12 @@ from photo_eval_ml_core import (
 )
 
 
-HOST = os.environ.get("PHOTO_EVAL_ML_HOST", "0.0.0.0")
-PORT = int(os.environ.get("PORT") or os.environ.get("PHOTO_EVAL_ML_PORT", "8788"))
-DEFAULT_ENTRY = "photo-evaluator-training-lab.html"
-DL_LAB_DIR = ROOT_DIR / "dl-lab"
+HOST = os.environ.get("PHOTO_EVAL_ML_HOST", "127.0.0.1")
+PORT = int(os.environ.get("PHOTO_EVAL_ML_PORT", "8787"))
+DEFAULT_ENTRY = "local-main-app/photo-evaluator-pro-delivery-webhook-set.html"
+DL_LAB_DIR = ROOT_DIR / "photo-evaluator-training-lab-app" / "dl-lab"
 DL_MODEL_PATH = DL_LAB_DIR / "models" / "dl_residual_model.pt"
 DL_MODEL_META_PATH = DL_LAB_DIR / "models" / "dl_residual_model_meta.json"
-DL_BETA_RESULTS_PATH = DL_LAB_DIR / "exports" / "dl_beta_public_results.jsonl"
-GITHUB_PAGES_DIR = ROOT_DIR.parent / "github-pages-photo-evaluator"
-DL_PUBLIC_STATS_URL = os.environ.get("PHOTO_EVAL_DL_PUBLIC_STATS_URL", "https://photo-evaluator-dl-api.onrender.com/api/dl/public-stats")
 DL_RUNTIME_CACHE: dict[str, object] = {
     "mtime": None,
     "model": None,
@@ -48,57 +38,7 @@ DL_RUNTIME_CACHE: dict[str, object] = {
     "torch": None,
     "Image": None,
 }
-
-
-ADMIN_ACTIONS: dict[str, dict[str, object]] = {
-    "train-sync-github": {
-        "label": "学習して GitHub 用へ反映",
-        "commands": [
-            {"cmd": ["python3", "train_photo_eval_model.py"], "cwd": ROOT_DIR},
-            {
-                "cmd": ["cp", str(ROOT_DIR / "photo_eval_model.json"), str(GITHUB_PAGES_DIR / "photo_eval_model.json")],
-                "cwd": ROOT_DIR,
-            },
-            {"cmd": ["python3", "export_github_stats.py"], "cwd": ROOT_DIR},
-        ],
-    },
-    "merge-public-sync": {
-        "label": "公開フィードバック統合 + GitHub 反映",
-        "commands": [
-            {"cmd": ["python3", "update_public_feedback_model.py"], "cwd": ROOT_DIR},
-            {
-                "cmd": ["cp", str(ROOT_DIR / "photo_eval_model.json"), str(GITHUB_PAGES_DIR / "photo_eval_model.json")],
-                "cwd": ROOT_DIR,
-            },
-            {"cmd": ["python3", "export_github_stats.py"], "cwd": ROOT_DIR},
-        ],
-    },
-    "export-dl-dataset": {
-        "label": "DL データセット書き出し",
-        "commands": [
-            {"cmd": ["python3", "export_dl_dataset.py"], "cwd": DL_LAB_DIR},
-        ],
-    },
-    "train-dl-model": {
-        "label": "DL モデル学習",
-        "commands": [
-            {"cmd": ["python3", "train_dl_residual_model.py"], "cwd": DL_LAB_DIR},
-        ],
-    },
-    "run-dl-pipeline": {
-        "label": "DL パイプライン実行",
-        "commands": [
-            {"cmd": ["python3", "export_dl_dataset.py"], "cwd": DL_LAB_DIR},
-            {"cmd": ["python3", "train_dl_residual_model.py"], "cwd": DL_LAB_DIR},
-        ],
-    },
-    "reset-dl-state": {
-        "label": "DL 学習状態を空にする",
-        "commands": [
-            {"cmd": ["python3", "reset_dl_state.py"], "cwd": DL_LAB_DIR},
-        ],
-    },
-}
+SNS_ACCOUNTS_PATH = ROOT_DIR / "SNS" / "sns_accounts.json"
 
 
 class PhotoEvalHandler(SimpleHTTPRequestHandler):
@@ -120,20 +60,24 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/":
             self.path = f"/{DEFAULT_ENTRY}"
             return super().do_GET()
+        if parsed.path in {"/developer-review", "/developer-review/"}:
+            self.path = "/developer-review.html"
+            return super().do_GET()
+        if parsed.path in {"/developer-review-app", "/developer-review-app/"}:
+            self.path = "/developer-review.html"
+            return super().do_GET()
+        if parsed.path == "/developer-review.html":
+            self.path = "/developer-review.html"
+            return super().do_GET()
+        if parsed.path == "/developer-review-app/index.html":
+            self.path = "/developer-review.html"
+            return super().do_GET()
         if parsed.path == "/api/health":
             return self._write_json({"success": True, "message": "ok"})
         if parsed.path == "/api/ml/status":
             return self._write_json({"success": True, **get_model_status()})
-        if parsed.path == "/api/ml/stats":
-            return self._write_json({"success": True, "stats": build_feedback_statistics()})
         if parsed.path == "/api/dl/status":
             return self._write_json({"success": True, **_get_dl_status()})
-        if parsed.path == "/api/dl/stats":
-            return self._write_json({"success": True, "stats": _build_dl_statistics()})
-        if parsed.path == "/api/dl/public-stats":
-            return self._write_json({"success": True, "stats": _get_dl_public_statistics()})
-        if parsed.path == "/api/admin/status":
-            return self._write_json({"success": True, **_build_admin_status()})
         if parsed.path == "/api/ml/export":
             params = parse_qs(parsed.query)
             fmt = (params.get("format") or ["json"])[0].lower()
@@ -176,15 +120,6 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
                 "count": len(records),
                 "records": records,
             })
-        if parsed.path == "/api/review/image":
-            params = parse_qs(parsed.query)
-            remote_url = (params.get("url") or [""])[0].strip()
-            if not remote_url:
-                return self._write_json(
-                    {"success": False, "message": "画像URLが指定されていません"},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-            return self._proxy_review_image(remote_url)
 
         return super().do_GET()
 
@@ -194,12 +129,12 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
             return self._handle_predict()
         if parsed.path == "/api/dl/predict":
             return self._handle_dl_predict()
-        if parsed.path == "/api/dl/evaluation":
-            return self._handle_dl_evaluation()
         if parsed.path == "/api/ml/feedback":
             return self._handle_feedback()
-        if parsed.path == "/api/admin/run":
-            return self._handle_admin_run()
+        if parsed.path == "/api/sns/register":
+            return self._handle_sns_register()
+        if parsed.path == "/api/sns/login":
+            return self._handle_sns_login()
         return self._write_json(
             {"success": False, "message": "unknown endpoint"},
             status=HTTPStatus.NOT_FOUND,
@@ -240,7 +175,6 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         if payload is None:
             return
         try:
-            payload = _attach_full_exif_metadata(payload)
             saved = save_feedback(payload)
         except ValueError as error:
             return self._write_json(
@@ -250,57 +184,81 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         self._write_json(
             {
                 "success": True,
-                "message": "既存の学習データを更新しました" if saved.get("deduplicated") else "フィードバックを保存しました",
+                "message": "フィードバックを保存しました",
                 "imageId": saved["image_id"],
                 "savedAt": saved["updated_at"],
-                "exifStored": bool((saved.get("image_metadata") or {}).get("exif")),
-                "deduplicated": bool(saved.get("deduplicated")),
-                "duplicateOf": saved.get("duplicate_of") or "",
             }
         )
 
-    def _handle_dl_evaluation(self) -> None:
+    def _handle_sns_register(self) -> None:
         payload = self._read_json_body()
         if payload is None:
             return
-        try:
-            payload = _attach_full_exif_metadata(payload)
-            saved_record = _save_dl_public_evaluation(payload)
-        except ValueError as error:
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        profile = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
+        if not email or "@" not in email:
             return self._write_json(
-                {"success": False, "message": str(error)},
+                {"success": False, "message": "メールアドレスが不正です"},
                 status=HTTPStatus.BAD_REQUEST,
             )
-        self._write_json(
-            {
+        if len(password) < 8:
+            return self._write_json(
+                {"success": False, "message": "パスワードは8文字以上にしてください"},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+        accounts = _load_sns_accounts()
+        existing = next((item for item in accounts if str(item.get("email") or "").lower() == email), None)
+        normalized_profile = _normalize_sns_profile(profile)
+        if existing:
+            if not _verify_password(password, str(existing.get("passwordSalt") or ""), str(existing.get("passwordHash") or "")):
+                return self._write_json(
+                    {"success": False, "message": "このメールアドレスはすでに登録されています"},
+                    status=HTTPStatus.CONFLICT,
+                )
+            updated = {
+                **existing,
+                "profile": normalized_profile,
+            }
+            _save_sns_accounts([updated if item.get("id") == updated["id"] else item for item in accounts])
+            return self._write_json({
                 "success": True,
-                "saved": True,
-                "record": saved_record,
-                "stats": _build_dl_public_statistics(),
-            }
-        )
+                "mode": "updated",
+                "account": _public_sns_account(updated),
+            })
 
-    def _handle_admin_run(self) -> None:
+        salt, password_hash = _hash_password(password)
+        account = {
+            "id": f"acct_{secrets.token_hex(8)}",
+            "email": email,
+            "passwordSalt": salt,
+            "passwordHash": password_hash,
+            "profile": normalized_profile,
+        }
+        _save_sns_accounts([*accounts, account])
+        return self._write_json({
+            "success": True,
+            "mode": "created",
+            "account": _public_sns_account(account),
+        })
+
+    def _handle_sns_login(self) -> None:
         payload = self._read_json_body()
         if payload is None:
             return
-        action = str(payload.get("action") or "").strip()
-        if action not in ADMIN_ACTIONS:
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        accounts = _load_sns_accounts()
+        account = next((item for item in accounts if str(item.get("email") or "").lower() == email), None)
+        if account is None or not _verify_password(password, str(account.get("passwordSalt") or ""), str(account.get("passwordHash") or "")):
             return self._write_json(
-                {"success": False, "message": "unknown admin action"},
-                status=HTTPStatus.BAD_REQUEST,
+                {"success": False, "message": "メールアドレスまたはパスワードが一致しません"},
+                status=HTTPStatus.UNAUTHORIZED,
             )
-        try:
-            result = _run_admin_action(action)
-        except Exception as error:  # noqa: BLE001
-            return self._write_json(
-                {
-                    "success": False,
-                    "message": f"管理処理の実行に失敗しました: {error}",
-                },
-                status=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
-        return self._write_json({"success": True, **result})
+        return self._write_json({
+            "success": True,
+            "account": _public_sns_account(account),
+        })
 
     def _read_json_body(self) -> dict | None:
         try:
@@ -340,64 +298,6 @@ class PhotoEvalHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def _proxy_review_image(self, remote_url: str) -> None:
-        try:
-            request = Request(
-                remote_url,
-                headers={
-                    "User-Agent": "PhotoEvalTrainingLab/1.0",
-                    "Accept": "image/*,*/*;q=0.8",
-                },
-            )
-            with urlopen(request, timeout=20) as response:
-                payload = response.read()
-                content_type = response.headers.get_content_type() or "application/octet-stream"
-        except URLError as error:
-            self._write_json(
-                {"success": False, "message": f"画像の取得に失敗しました: {error.reason}"},
-                status=HTTPStatus.BAD_GATEWAY,
-            )
-            return
-        except Exception as error:
-            self._write_json(
-                {"success": False, "message": f"画像の取得に失敗しました: {error}"},
-                status=HTTPStatus.BAD_GATEWAY,
-            )
-            return
-
-        self._write_bytes(
-            payload,
-            content_type=content_type,
-            headers={"Cache-Control": "no-store"},
-        )
-
-
-def _build_drive_thumbnail_url(file_id: str) -> str:
-    return f"https://drive.google.com/thumbnail?id={quote(file_id)}&sz=w1200" if file_id else ""
-
-
-def _build_drive_view_url(file_id: str) -> str:
-    return f"https://drive.google.com/uc?export=view&id={quote(file_id)}" if file_id else ""
-
-
-def _extract_drive_file_id(drive_url: str) -> str:
-    parsed = urlparse(drive_url or "")
-    if not parsed.netloc:
-        return ""
-    query = parse_qs(parsed.query)
-    if query.get("id"):
-        return str(query["id"][0] or "")
-    parts = [part for part in parsed.path.split("/") if part]
-    if "d" in parts:
-        index = parts.index("d")
-        if index + 1 < len(parts):
-            return parts[index + 1]
-    return ""
-
-
-def _build_review_image_proxy_url(remote_url: str) -> str:
-    return f"/api/review/image?url={quote(remote_url, safe='')}" if remote_url else ""
-
 
 def _read_json_file(path: Path) -> dict:
     try:
@@ -406,12 +306,71 @@ def _read_json_file(path: Path) -> dict:
         return {}
 
 
+def _load_sns_accounts() -> list[dict]:
+    try:
+        parsed = json.loads(SNS_ACCOUNTS_PATH.read_text(encoding="utf-8")) if SNS_ACCOUNTS_PATH.exists() else []
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _save_sns_accounts(accounts: list[dict]) -> None:
+    SNS_ACCOUNTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SNS_ACCOUNTS_PATH.write_text(
+        json.dumps(accounts, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _normalize_sns_profile(profile: dict) -> dict[str, str]:
+    display_name = str(profile.get("displayName") or "").strip() or "Pulse User"
+    handle = str(profile.get("handle") or "").strip().replace(" ", "")
+    if not handle:
+        handle = "@pulse"
+    if not handle.startswith("@"):
+        handle = f"@{handle}"
+    location = str(profile.get("location") or "").strip() or "Japan"
+    bio = str(profile.get("bio") or "").strip() or "Pulse に参加しました。"
+    avatar_src = str(profile.get("avatarSrc") or "")
+    return {
+        "displayName": display_name,
+        "handle": handle,
+        "location": location,
+        "bio": bio,
+        "avatarSrc": avatar_src,
+    }
+
+
+def _hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    actual_salt = salt or secrets.token_hex(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(actual_salt),
+        200_000,
+    ).hex()
+    return actual_salt, password_hash
+
+
+def _verify_password(password: str, salt: str, password_hash: str) -> bool:
+    if not salt or not password_hash:
+        return False
+    _salt, computed_hash = _hash_password(password, salt)
+    return secrets.compare_digest(computed_hash, password_hash)
+
+
+def _public_sns_account(account: dict) -> dict[str, object]:
+    return {
+        "id": str(account.get("id") or ""),
+        "email": str(account.get("email") or ""),
+        "profile": _normalize_sns_profile(account.get("profile") if isinstance(account.get("profile"), dict) else {}),
+    }
+
+
 def _get_dl_status() -> dict[str, object]:
     metadata = _read_json_file(DL_MODEL_META_PATH) if DL_MODEL_META_PATH.exists() else {}
     available = DL_MODEL_PATH.exists() and DL_MODEL_META_PATH.exists()
-    reason = ""
-    if not available:
-        reason = "DLモデルがまだ学習されていません"
+    reason = "" if available else "DLモデルがまだ学習されていません"
     return {
         "available": available,
         "modelPath": str(DL_MODEL_PATH),
@@ -421,7 +380,8 @@ def _get_dl_status() -> dict[str, object]:
         "trainCount": int(metadata.get("train_count") or 0),
         "validationCount": int(metadata.get("validation_count") or 0),
         "validationMae": metadata.get("validation_mae"),
-        "trainedAt": str(metadata.get("trained_at") or ""),
+        "validationMaeByOutput": metadata.get("validation_mae_by_output") or {},
+        "validationGenreAccuracy": metadata.get("validation_genre_accuracy"),
         "reason": reason,
     }
 
@@ -615,490 +575,8 @@ def _predict_with_dl_model(image_data_url: str, rule_score: float) -> dict[str, 
     }
 
 
-def _build_admin_status() -> dict[str, object]:
-    ml_status = get_model_status()
-    dl_status = _get_dl_status()
-    records = load_feedback_rows()
-    return {
-        "entryUrl": f"http://{HOST}:{PORT}/",
-        "evaluateUrl": f"http://{HOST}:{PORT}/photo-evaluator-training-lab.html",
-        "reviewUrl": f"http://{HOST}:{PORT}/photo-evaluator-training-lab.html#review",
-        "statsUrl": f"http://{HOST}:{PORT}/photo-evaluator-training-lab.html#stats",
-        "dlStatsUrl": f"http://{HOST}:{PORT}/photo-evaluator-training-lab.html#dl-stats",
-        "recordCount": len(records),
-        "mlStatus": ml_status,
-        "dlStatus": dl_status,
-        "actions": [
-            {"id": action_id, "label": str(config["label"])}
-            for action_id, config in ADMIN_ACTIONS.items()
-        ],
-        "downloads": {
-            "modelJson": "/photo_eval_model.json",
-            "dbFile": "/photo_eval_ml.sqlite3",
-            "datasetJson": "/api/ml/export?format=json",
-            "datasetCsv": "/api/ml/export?format=csv",
-            "dlDatasetJsonl": "/dl-lab/exports/dl_dataset.jsonl",
-            "dlDatasetSummary": "/dl-lab/exports/dl_dataset_summary.json",
-            "dlModelMeta": "/dl-lab/models/dl_residual_model_meta.json",
-        },
-    }
-
-
-def _build_dl_statistics() -> dict[str, object]:
-    dataset_path = DL_LAB_DIR / "exports" / "dl_dataset.jsonl"
-    summary_path = DL_LAB_DIR / "exports" / "dl_dataset_summary.json"
-    metadata_path = DL_MODEL_META_PATH
-
-    summary = _read_json_file(summary_path) if summary_path.exists() else {}
-    metadata = _read_json_file(metadata_path) if metadata_path.exists() else {}
-    records: list[dict] = []
-    if dataset_path.exists():
-        with dataset_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if line:
-                    try:
-                        records.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-
-    corrected_hist = [{"label": f"{start}-{min(start + 9, 100)}", "count": 0} for start in range(0, 100, 10)]
-    target_hist = [{"label": label, "count": 0} for label in ["-25〜-16", "-15〜-6", "-5〜5", "6〜15", "16〜25"]]
-    genre_counts: dict[str, int] = {}
-    mode_counts: dict[str, int] = {}
-
-    for record in records:
-        corrected_score = record.get("corrected_score")
-        if isinstance(corrected_score, (int, float)):
-            bucket_index = min(int(float(corrected_score) // 10), len(corrected_hist) - 1)
-            corrected_hist[bucket_index]["count"] += 1
-
-        target_value = record.get("target")
-        if isinstance(target_value, (int, float)):
-            numeric = float(target_value)
-            if numeric <= -16:
-                target_hist[0]["count"] += 1
-            elif numeric <= -6:
-                target_hist[1]["count"] += 1
-            elif numeric <= 5:
-                target_hist[2]["count"] += 1
-            elif numeric <= 15:
-                target_hist[3]["count"] += 1
-            else:
-                target_hist[4]["count"] += 1
-
-        genre = str(record.get("genre") or "").strip()
-        if genre:
-            genre_counts[genre] = genre_counts.get(genre, 0) + 1
-
-        evaluation_mode = str(record.get("evaluation_mode") or "").strip()
-        if evaluation_mode:
-            mode_counts[evaluation_mode] = mode_counts.get(evaluation_mode, 0) + 1
-
-    corrected_hist_max = max((bucket["count"] for bucket in corrected_hist), default=0)
-    target_hist_max = max((bucket["count"] for bucket in target_hist), default=0)
-    top_genres = [
-        {"label": label, "count": count}
-        for label, count in sorted(genre_counts.items(), key=lambda item: (-item[1], item[0]))
-    ]
-    top_modes = [
-        {"label": label, "count": count}
-        for label, count in sorted(mode_counts.items(), key=lambda item: (-item[1], item[0]))
-    ]
-
-    return {
-        "summary": {
-            "sourceRows": int(summary.get("source_rows") or 0),
-            "exportedRows": int(summary.get("exported_rows") or 0),
-            "skippedMissingImage": int(summary.get("skipped_missing_image") or 0),
-            "skippedMissingLabel": int(summary.get("skipped_missing_label") or 0),
-            "target": str(summary.get("target") or metadata.get("target") or "residual"),
-            "trainedSampleCount": int(metadata.get("sample_count") or 0),
-            "trainCount": int(metadata.get("train_count") or 0),
-            "validationCount": int(metadata.get("validation_count") or 0),
-            "validationMae": metadata.get("validation_mae"),
-            "trainedAt": metadata.get("trained_at"),
-            "status": str(metadata.get("status") or ("trained" if DL_MODEL_PATH.exists() else "untrained")),
-        },
-        "correctedScoreHistogram": {
-            "maxCount": corrected_hist_max,
-            "buckets": corrected_hist,
-        },
-        "targetHistogram": {
-            "maxCount": target_hist_max,
-            "buckets": target_hist,
-        },
-        "genreCounts": top_genres,
-        "evaluationModeCounts": top_modes,
-    }
-
-
-def _read_jsonl_records(path: Path) -> list[dict]:
-    records: list[dict] = []
-    if not path.exists():
-        return records
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                records.append(payload)
-    return records
-
-
-def _save_dl_public_evaluation(payload: dict) -> dict[str, object]:
-    try:
-        total_score = float(payload.get("totalScore"))
-    except (TypeError, ValueError):
-        raise ValueError("totalScore が不正です")
-
-    required_score_keys = [
-        "compositionScore",
-        "lightScore",
-        "colorScore",
-        "technicalScore",
-        "subjectScore",
-        "impressionScore",
-    ]
-    normalized_scores: dict[str, float] = {}
-    for key in required_score_keys:
-        try:
-            normalized_scores[key] = round(float(payload.get(key)), 2)
-        except (TypeError, ValueError):
-            raise ValueError(f"{key} が不正です")
-
-    genre = str(payload.get("genre") or "other").strip() or "other"
-    engine = str(payload.get("engine") or "rule").strip() or "rule"
-    model_version = str(payload.get("modelVersion") or payload.get("modelType") or "").strip()
-    image_metadata = dict(payload.get("image_metadata") or {})
-    record = {
-        "imageId": str(payload.get("imageId") or payload.get("image_id") or ""),
-        "createdAt": str(payload.get("createdAt") or datetime.now(timezone.utc).isoformat()),
-        "engine": engine,
-        "modelVersion": model_version,
-        "genre": genre,
-        "totalScore": round(total_score, 2),
-        "fileName": str(payload.get("fileName") or image_metadata.get("originalFileName") or ""),
-        "imageMetadata": image_metadata,
-        **normalized_scores,
-    }
-    DL_BETA_RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with DL_BETA_RESULTS_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return record
-
-
-def _build_dl_public_statistics() -> dict[str, object]:
-    records = _read_jsonl_records(DL_BETA_RESULTS_PATH)
-    bins = [
-        {"label": "0-49", "min": 0.0, "max": 49.999},
-        {"label": "50-59", "min": 50.0, "max": 59.999},
-        {"label": "60-69", "min": 60.0, "max": 69.999},
-        {"label": "70-79", "min": 70.0, "max": 79.999},
-        {"label": "80-89", "min": 80.0, "max": 89.999},
-        {"label": "90-100", "min": 90.0, "max": 100.001},
-    ]
-    histogram = [{"label": bucket["label"], "count": 0} for bucket in bins]
-    genre_counts: dict[str, int] = {}
-    camera_counts: dict[str, int] = {}
-    location_counts: dict[str, int] = {}
-    lens_counts: dict[str, int] = {}
-    hour_buckets = [{"label": f"{hour:02d}", "count": 0} for hour in range(24)]
-    altitude_buckets = [
-        {"label": "海面下", "min": None, "max": 0, "count": 0},
-        {"label": "0-49m", "min": 0, "max": 50, "count": 0},
-        {"label": "50-99m", "min": 50, "max": 100, "count": 0},
-        {"label": "100-199m", "min": 100, "max": 200, "count": 0},
-        {"label": "200-499m", "min": 200, "max": 500, "count": 0},
-        {"label": "500m以上", "min": 500, "max": None, "count": 0},
-    ]
-    average_keys = [
-        ("composition", "compositionScore"),
-        ("light", "lightScore"),
-        ("color", "colorScore"),
-        ("technical", "technicalScore"),
-        ("subject", "subjectScore"),
-        ("impact", "impressionScore"),
-        ("total", "totalScore"),
-    ]
-    exif_count = 0
-    geo_count = 0
-    altitude_count = 0
-
-    for record in records:
-        total_score = float(record.get("totalScore") or 0.0)
-        for index, bucket in enumerate(bins):
-            if bucket["min"] <= total_score <= bucket["max"]:
-                histogram[index]["count"] += 1
-                break
-        genre = str(record.get("genre") or "other").strip() or "other"
-        genre_counts[genre] = genre_counts.get(genre, 0) + 1
-
-        image_metadata = dict(record.get("imageMetadata") or {})
-        exif_summary = dict(image_metadata.get("exifSummary") or {})
-        if not exif_summary and isinstance(image_metadata.get("exif"), dict):
-          exif_summary = _build_exif_summary_from_exif(dict(image_metadata.get("exif") or {}))
-        if any(value not in ("", None) for value in exif_summary.values()):
-            exif_count += 1
-
-        camera_name = str(exif_summary.get("cameraModel") or "").strip()
-        if camera_name:
-            camera_counts[camera_name] = camera_counts.get(camera_name, 0) + 1
-
-        lens_name = str(exif_summary.get("lensModel") or "").strip()
-        if lens_name:
-            lens_counts[lens_name] = lens_counts.get(lens_name, 0) + 1
-
-        location_label = str(exif_summary.get("locationLabel") or exif_summary.get("prefecture") or "").strip()
-        if location_label:
-            location_counts[location_label] = location_counts.get(location_label, 0) + 1
-
-        capture_hour = exif_summary.get("captureHour")
-        if capture_hour in ("", None):
-            parsed_capture = _parse_capture_datetime(exif_summary.get("dateTimeOriginal"))
-            capture_hour = parsed_capture.hour if parsed_capture else None
-        if isinstance(capture_hour, int) and 0 <= capture_hour <= 23:
-            hour_buckets[capture_hour]["count"] += 1
-
-        latitude = _coerce_float(exif_summary.get("gpsLatitude"))
-        longitude = _coerce_float(exif_summary.get("gpsLongitude"))
-        if latitude is not None and longitude is not None:
-            geo_count += 1
-
-        altitude_value = _coerce_float(exif_summary.get("altitudeMeters"))
-        if altitude_value is not None:
-            altitude_count += 1
-            for bucket in altitude_buckets:
-                minimum = bucket["min"]
-                maximum = bucket["max"]
-                if minimum is None and altitude_value < float(maximum):
-                    bucket["count"] += 1
-                    break
-                if maximum is None and altitude_value >= float(minimum):
-                    bucket["count"] += 1
-                    break
-                if minimum is not None and maximum is not None and minimum <= altitude_value < maximum:
-                    bucket["count"] += 1
-                    break
-
-    item_averages = []
-    for label, key in average_keys:
-        values = [float(record.get(key) or 0.0) for record in records if record.get(key) is not None]
-        average = (sum(values) / len(values)) if values else 0.0
-        item_averages.append({"label": label, "value": round(average, 2)})
-
-    return {
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "sampleCount": len(records),
-        "summary": {
-            "totalRecords": len(records),
-            "averageTotalScore": next((item["value"] for item in item_averages if item["label"] == "total"), 0.0),
-            "exifRecords": exif_count,
-            "exifCoverageRate": round((exif_count / len(records)) * 100, 1) if records else 0.0,
-            "geoRecords": geo_count,
-            "altitudeRecords": altitude_count,
-        },
-        "scoreHistogram": {
-            "maxCount": max((bucket["count"] for bucket in histogram), default=0),
-            "buckets": histogram,
-        },
-        "genreCounts": [
-            {"label": label, "count": count}
-            for label, count in sorted(genre_counts.items(), key=lambda item: (-item[1], item[0]))
-        ],
-        "itemAverages": item_averages,
-        "captureHourHistogram": hour_buckets,
-        "topCameras": [
-            {"label": label, "count": count}
-            for label, count in sorted(camera_counts.items(), key=lambda item: (-item[1], item[0]))
-        ],
-        "topLenses": [
-            {"label": label, "count": count}
-            for label, count in sorted(lens_counts.items(), key=lambda item: (-item[1], item[0]))
-        ],
-        "locationCounts": [
-            {"label": label, "count": count}
-            for label, count in sorted(location_counts.items(), key=lambda item: (-item[1], item[0]))
-        ],
-        "altitudeHistogram": {
-            "maxCount": max((bucket["count"] for bucket in altitude_buckets), default=0),
-            "buckets": altitude_buckets,
-        },
-        "storagePath": str(DL_BETA_RESULTS_PATH),
-    }
-
-
-def _fetch_remote_dl_public_statistics() -> dict[str, object] | None:
-    if not DL_PUBLIC_STATS_URL:
-        return None
-    try:
-        request = Request(DL_PUBLIC_STATS_URL, headers={"Accept": "application/json"})
-        with urlopen(request, timeout=10) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        stats = payload.get("stats") if isinstance(payload, dict) else None
-        if isinstance(stats, dict):
-            stats = dict(stats)
-            stats["source"] = "remote"
-            return stats
-    except Exception:
-        return None
-    return None
-
-
-def _get_dl_public_statistics() -> dict[str, object]:
-    remote_stats = _fetch_remote_dl_public_statistics()
-    if remote_stats:
-        return remote_stats
-    local_stats = _build_dl_public_statistics()
-    local_stats["source"] = "local"
-    return local_stats
-
-
-def _run_admin_action(action: str) -> dict[str, object]:
-    action_config = ADMIN_ACTIONS[action]
-    outputs: list[str] = []
-    ok = True
-    for step in action_config["commands"]:
-        step_cmd = step["cmd"]
-        step_cwd = Path(step["cwd"])
-        outputs.append(f"$ {' '.join(step_cmd)}")
-        result = subprocess.run(
-            step_cmd,
-            cwd=step_cwd,
-            capture_output=True,
-            text=True,
-        )
-        if result.stdout:
-            outputs.append(result.stdout.strip())
-        if result.stderr:
-            outputs.append(result.stderr.strip())
-        if result.returncode != 0:
-            ok = False
-            outputs.append(f"(exit {result.returncode})")
-            break
-    return {
-        "action": action,
-        "label": action_config["label"],
-        "ok": ok,
-        "output": "\n\n".join(chunk for chunk in outputs if chunk),
-        "status": _build_admin_status(),
-    }
-
-
-def _pick_exif_value(exif: dict, *keys: str):
-    for key in keys:
-        if key in exif and exif[key] not in ("", None):
-            return exif[key]
-    for key in keys:
-        lowered = key.lower()
-        for existing_key, value in exif.items():
-            existing = str(existing_key).lower()
-            if existing == lowered or existing.endswith(f":{lowered}"):
-                if value not in ("", None):
-                    return value
-    return None
-
-
-def _build_exif_summary(exif: dict) -> dict:
-    return {
-        "cameraMake": _pick_exif_value(exif, "Make"),
-        "cameraModel": _pick_exif_value(exif, "Model"),
-        "lensModel": _pick_exif_value(exif, "LensModel", "LensID"),
-        "iso": _pick_exif_value(exif, "ISO"),
-        "aperture": _pick_exif_value(exif, "FNumber", "Aperture"),
-        "exposureTime": _pick_exif_value(exif, "ExposureTime", "ShutterSpeed"),
-        "focalLength": _pick_exif_value(exif, "FocalLength"),
-        "focalLength35mm": _pick_exif_value(exif, "FocalLengthIn35mmFormat", "FocalLength35efl"),
-        "dateTimeOriginal": _pick_exif_value(exif, "DateTimeOriginal", "SubSecDateTimeOriginal", "CreateDate"),
-    }
-
-
-def _extract_full_exif_metadata(path: Path) -> dict:
-    command = [
-        "exiftool",
-        "-json",
-        "-struct",
-        "-a",
-        "-u",
-        "-U",
-        "-n",
-        "-G1",
-        "-api",
-        "RequestAll=3",
-        str(path),
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    payload = json.loads(result.stdout or "[]")
-    if not payload:
-        return {}
-    exif = dict(payload[0] or {})
-    exif.pop("SourceFile", None)
-    return exif
-
-
-def _sanitize_file_stem(value: str) -> str:
-    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in value.strip())
-    cleaned = cleaned.strip("-_")
-    return cleaned or "image"
-
-
-def _store_dl_source_image(raw_bytes: bytes, image_id: str, suffix: str) -> tuple[str, str]:
-    dl_image_dir = ROOT_DIR / "dl-lab" / "images"
-    dl_image_dir.mkdir(parents=True, exist_ok=True)
-    file_name = f"{_sanitize_file_stem(image_id)}{suffix or '.jpg'}"
-    file_path = dl_image_dir / file_name
-    file_path.write_bytes(raw_bytes)
-    relative_path = file_path.relative_to(ROOT_DIR)
-    return str(file_path), str(relative_path)
-
-
-def _attach_full_exif_metadata(payload: dict) -> dict:
-    original_file = payload.get("originalFile") or payload.get("originalFileHeader") or {}
-    base64_value = str(original_file.get("base64") or "")
-    if not base64_value:
-        return payload
-
-    file_name = str(original_file.get("fileName") or payload.get("fileName") or "upload.jpg")
-    mime_type = str(original_file.get("mimeType") or "")
-    suffix = Path(file_name).suffix or mimetypes.guess_extension(mime_type) or ".jpg"
-    image_metadata = dict(payload.get("image_metadata") or {})
-    image_id = str(payload.get("imageId") or payload.get("image_id") or "")
-    image_metadata["originalFileName"] = file_name
-    image_metadata["originalMimeType"] = mime_type
-    image_metadata["originalFileSize"] = int(original_file.get("size") or 0)
-
-    temp_path = None
-    try:
-        raw_bytes = base64.b64decode(base64_value)
-        if image_id and payload.get("originalFile"):
-            stored_path, relative_path = _store_dl_source_image(raw_bytes, image_id, suffix)
-            image_metadata["dlImagePath"] = stored_path
-            image_metadata["dlImageRelativePath"] = relative_path
-            image_metadata["dlImageStoredAt"] = datetime.now(timezone.utc).isoformat()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_file.write(raw_bytes)
-            temp_path = Path(temp_file.name)
-        exif = _extract_full_exif_metadata(temp_path)
-        image_metadata["exif"] = exif
-        image_metadata["exifSummary"] = _build_exif_summary(exif)
-        if payload.get("originalFileHeader"):
-            image_metadata["exifFromPartialHeader"] = True
-    except Exception as error:  # noqa: BLE001
-        image_metadata["exifError"] = str(error)
-    finally:
-        if temp_path and temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-
-    enriched = dict(payload)
-    enriched["image_metadata"] = image_metadata
-    enriched.pop("originalFile", None)
-    enriched.pop("originalFileHeader", None)
-    return enriched
+def _build_drive_thumbnail_url(file_id: str) -> str:
+    return f"https://drive.google.com/thumbnail?id={quote(file_id)}&sz=w1200" if file_id else ""
 
 
 def _normalize_public_review_record(payload: dict) -> dict:
@@ -1107,17 +585,8 @@ def _normalize_public_review_record(payload: dict) -> dict:
     displayed_scores = payload.get("displayed_scores") or {}
     image_metadata = payload.get("image_metadata") or {}
     review_asset = payload.get("reviewAsset") or {}
+    drive_file_id = str(review_asset.get("driveFileId") or "")
     drive_url = str(review_asset.get("driveUrl") or "")
-    drive_file_id = str(review_asset.get("driveFileId") or _extract_drive_file_id(drive_url) or "")
-    drive_url = str(review_asset.get("driveUrl") or "")
-    thumbnail_url = str(review_asset.get("thumbnailUrl") or _build_drive_thumbnail_url(drive_file_id))
-    direct_image_url = _build_drive_view_url(drive_file_id)
-    proxy_source_url = direct_image_url or thumbnail_url or drive_url
-    image_reason = ""
-    if not drive_url and not drive_file_id:
-        image_reason = "古い公開フィードバックのため画像参照情報がありません"
-    elif not proxy_source_url:
-        image_reason = "Drive 画像のサムネイルURLを生成できませんでした"
     total_score = displayed_scores.get("totalScore")
     if total_score in ("", None):
         total_score = predicted_scores.get("totalScore")
@@ -1134,13 +603,10 @@ def _normalize_public_review_record(payload: dict) -> dict:
         "source": str(payload.get("source") or "public-pages"),
         "driveUrl": drive_url,
         "driveFileId": drive_file_id,
-        "thumbnailUrl": thumbnail_url,
-        "directImageUrl": direct_image_url,
-        "imageProxyUrl": _build_review_image_proxy_url(proxy_source_url),
+        "thumbnailUrl": str(review_asset.get("thumbnailUrl") or _build_drive_thumbnail_url(drive_file_id)),
         "savedToDrive": bool(review_asset.get("savedToDrive") or drive_url or drive_file_id),
         "note": str(feedback.get("note") or ""),
         "hasImageAsset": bool(drive_url or drive_file_id),
-        "imageAvailabilityReason": image_reason,
     }
 
 
@@ -1168,12 +634,9 @@ def _normalize_local_review_record(row: dict) -> dict:
         "driveUrl": "",
         "driveFileId": "",
         "thumbnailUrl": "",
-        "directImageUrl": "",
-        "imageProxyUrl": "",
         "savedToDrive": False,
         "note": str(user_feedback.get("note") or ""),
         "hasImageAsset": False,
-        "imageAvailabilityReason": "ローカル学習DBには元画像への参照が保存されていません",
     }
 
 
