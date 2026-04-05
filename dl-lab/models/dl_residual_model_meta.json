@@ -1,10 +1,10 @@
 {
   "model_type": "tiny_cnn_multi_task_score_genre_v4",
-  "trained_at": "2026-03-28T13:55:25.691717+00:00",
-  "dataset_path": "/Users/haradasusumuwataru/Documents/アプリ/photo-evaluator-training-lab-app/dl-lab/exports/dl_dataset.jsonl",
-  "sample_count": 71,
-  "train_count": 57,
-  "validation_count": 14,
+  "trained_at": "2026-04-05T16:13:57.456174+00:00",
+  "dataset_path": "dl-lab/exports/dl_dataset.jsonl",
+  "sample_count": 102,
+  "train_count": 83,
+  "validation_count": 19,
   "target": "multi_score",
   "output_names": [
     "composition",
@@ -23,15 +23,23 @@
     "food",
     "other"
   ],
-  "genre_supervised_train_count": 57,
-  "genre_supervised_validation_count": 14,
+  "genre_supervised_train_count": 83,
+  "genre_supervised_validation_count": 19,
   "genre_train_counts": {
-    "portrait": 7,
-    "landscape": 9,
-    "animal": 11,
-    "flora": 9,
-    "food": 9,
-    "other": 12
+    "portrait": 13,
+    "landscape": 14,
+    "animal": 18,
+    "flora": 8,
+    "food": 13,
+    "other": 17
+  },
+  "genre_validation_counts": {
+    "portrait": 3,
+    "landscape": 3,
+    "animal": 4,
+    "flora": 2,
+    "food": 3,
+    "other": 4
   },
   "image_size": 224,
   "batch_size": 8,
@@ -40,32 +48,40 @@
   "genre_loss_weight": 1.0,
   "genre_class_weight_power": 0.5,
   "genre_class_weights": {
-    "portrait": 1.1522,
-    "landscape": 1.0162,
-    "animal": 0.9192,
-    "flora": 1.0162,
-    "food": 1.0162,
-    "other": 0.88
+    "portrait": 1.0063,
+    "landscape": 0.9697,
+    "animal": 0.8552,
+    "flora": 1.2827,
+    "food": 1.0063,
+    "other": 0.8799
   },
-  "train_loss_final": 328.0924430981017,
-  "validation_mae": 7.7477,
+  "train_loss_final": 286.9115962752377,
+  "validation_mae": 6.499,
   "validation_mae_by_output": {
-    "composition": 6.1063,
-    "light": 11.7515,
-    "color": 11.5573,
-    "technical": 28.1385,
-    "subject": 6.9232,
-    "impact": 6.0406,
-    "total": 7.7477
+    "composition": 5.7611,
+    "light": 10.0695,
+    "color": 10.6072,
+    "technical": 25.0108,
+    "subject": 7.1792,
+    "impact": 7.0508,
+    "total": 6.499
   },
-  "validation_genre_accuracy": 0.1429,
+  "validation_genre_accuracy": 0.1053,
   "validation_genre_accuracy_by_label": {
     "portrait": 0.0,
-    "landscape": 1.0,
+    "landscape": 0.6667,
     "animal": 0.0,
     "flora": 0.0,
     "food": 0.0,
     "other": 0.0
   },
-  "model_path": "/Users/haradasusumuwataru/Documents/アプリ/photo-evaluator-training-lab-app/dl-lab/models/dl_residual_model.pt"
+  "genre_validation_correct_counts": {
+    "portrait": 0,
+    "landscape": 2,
+    "animal": 0,
+    "flora": 0,
+    "food": 0,
+    "other": 0
+  },
+  "model_path": "dl-lab/models/dl_residual_model.pt"
 }
